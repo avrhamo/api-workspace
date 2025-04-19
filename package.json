@@ -1,0 +1,44 @@
+{
+  "name": "api-workplace",
+  "private": true,
+  "version": "0.0.1",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "electron:tsc": "tsc -p electron/tsconfig.json",
+    "electron:dev": "npm run electron:tsc && concurrently \"vite\" \"electron .\"",
+    "electron:build": "npm run electron:tsc && vite build && electron-builder",
+    "electron:preview": "npm run electron:tsc && vite preview && electron .",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@headlessui/react": "^2.2.2",
+    "@monaco-editor/react": "^4.7.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "mongodb": "^6.15.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@heroicons/react": "^2.2.0",
+    "@types/node": "^22.14.1",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.14",
+    "electron-builder": "^24.1.2",
+    "eslint": "^9.22.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.19",
+    "globals": "^16.0.0",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.3.0",
+    "typescript": "~5.7.2",
+    "typescript-eslint": "^8.26.1",
+    "vite": "^6.3.1"
+  }
+}
