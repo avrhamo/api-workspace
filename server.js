@@ -67,6 +67,10 @@ app.post('/api/mongodb', async (req, res) => {
         const fields = await getCollectionFields(client, database, collection);
         return res.json({ fields });
 
+      case 'findOne':
+        const doc = await client.db(database).collection(collection).findOne({});
+        return res.json({ success: true, document: doc });
+
       default:
         return res.status(400).json({ error: 'Invalid action' });
     }

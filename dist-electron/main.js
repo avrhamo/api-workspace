@@ -35,8 +35,13 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
-function createWindow() {
-    const mainWindow = new electron_1.BrowserWindow({
+const mongodb_1 = require("mongodb");
+let mainWindow = null;
+let mongoClient = null;
+const activeCursors = new Map();
+const isDev = process.env.NODE_ENV === 'development';
+async function createWindow() {
+    mainWindow = new electron_1.BrowserWindow({
         width: 1200,
         height: 800,
         webPreferences: {
@@ -45,20 +50,134 @@ function createWindow() {
             preload: path.join(__dirname, 'preload.js')
         },
     });
-    // In development, use the Vite dev server
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
-}
-electron_1.app.whenReady().then(() => {
-    createWindow();
-    electron_1.app.on('activate', () => {
-        if (electron_1.BrowserWindow.getAllWindows().length === 0) {
-            createWindow();
-        }
+    // Set up error handling
+    mainWindow.webContents.on('render-process-gone', () => {
+        console.error('Renderer process crashed');
     });
+    if (isDev) {
+        // In development, use the Vite dev server
+        await mainWindow.loadURL('http://localhost:5173');
+        mainWindow.webContents.openDevTools();
+    }
+    else {
+        // In production, load the built files
+        await mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    }
+}
+// MongoDB IPC Handlers
+electron_1.ipcMain.handle('mongodb:connect', async (_, connectionString) => {
+    try {
+        mongoClient = new mongodb_1.MongoClient(connectionString);
+        await mongoClient.connect();
+        return { success: true };
+    }
+    catch (error) {
+        return { success: false, error: error.message };
+    }
 });
+electron_1.ipcMain.handle('mongodb:listDatabases', async () => {
+    try {
+        if (!mongoClient)
+            throw new Error('Not connected to MongoDB');
+        const admin = mongoClient.db().admin();
+        const result = await admin.listDatabases();
+        return { success: true, databases: result.databases };
+    }
+    catch (error) {
+        if (error instanceof Error) {
+            return { success: false, error: error.message };
+        }
+        return { success: false, error: 'An unknown error occurred' };
+    }
+});
+electron_1.ipcMain.handle('mongodb:listCollections', async (_, dbName) => {
+    try {
+        if (!mongoClient)
+            throw new Error('Not connected to MongoDB');
+        const db = mongoClient.db(dbName);
+        const collections = await db.listCollections().toArray();
+        return { success: true, collections };
+    }
+    catch (error) {
+        if (error instanceof Error) {
+            return { success: false, error: error.message };
+        }
+        return { success: false, error: 'An unknown error occurred' };
+    }
+});
+// Cursor Management
+electron_1.ipcMain.handle('mongodb:createCursor', async (_, dbName, collectionName, query = {}) => {
+    try {
+        if (!mongoClient)
+            throw new Error('Not connected to MongoDB');
+        const db = mongoClient.db(dbName);
+        const collection = db.collection(collectionName);
+        const cursor = collection.find(query);
+        // Generate a unique cursor ID
+        const cursorId = Date.now().toString();
+        activeCursors.set(cursorId, cursor);
+        return {
+            success: true,
+            cursorId,
+            totalCount: await cursor.count()
+        };
+    }
+    catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+electron_1.ipcMain.handle('mongodb:getNextBatch', async (_, cursorId, batchSize) => {
+    try {
+        const cursor = activeCursors.get(cursorId);
+        if (!cursor)
+            throw new Error('Cursor not found');
+        const documents = await cursor.next(batchSize);
+        return {
+            success: true,
+            documents,
+            hasMore: await cursor.hasNext()
+        };
+    }
+    catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+electron_1.ipcMain.handle('mongodb:closeCursor', async (_, cursorId) => {
+    try {
+        const cursor = activeCursors.get(cursorId);
+        if (cursor) {
+            await cursor.close();
+            activeCursors.delete(cursorId);
+        }
+        return { success: true };
+    }
+    catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+// App lifecycle handlers
+electron_1.app.whenReady().then(createWindow);
 electron_1.app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         electron_1.app.quit();
     }
 });
+electron_1.app.on('activate', () => {
+    if (electron_1.BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+    }
+});
+electron_1.app.on('quit', async () => {
+    for (const [_, cursor] of activeCursors) {
+        await cursor.close();
+    }
+    activeCursors.clear();
+    if (mongoClient) {
+        await mongoClient.close();
+    }
+});
+// Error handling
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+});
+//# sourceMappingURL=main.js.map

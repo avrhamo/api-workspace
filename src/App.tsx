@@ -1,6 +1,12 @@
 import Layout from './components/layout/Layout';
-import Base64Tool from './components/tools/Base64Tool';
-import ApiTester from './components/tools/api-tester/ApiTester';
+import Base64Tool from './components/tools/base64';
+import { ApiTester } from './components/tools/api-tester/ApiTester';
+import RSATool from './components/tools/rsa';
+import KeytabTool from './components/tools/keytab';
+import KafkaTester from './components/tools/kafka-tester';
+import RegexTool from './components/tools/regex';
+import TimeUnitsTool from './components/tools/time-units';
+import BSONTool from './components/tools/bson';
 import { useTheme } from './hooks/useTheme';
 
 function App() {
@@ -10,8 +16,20 @@ function App() {
     switch (currentTool) {
       case 'base64':
         return <Base64Tool />;
+      case 'rsa':
+        return <RSATool />;
+      case 'keytab':
+        return <KeytabTool />;
       case 'api-tester':
         return <ApiTester />;
+      case 'kafka':
+        return <KafkaTester />;
+      case 'regex':
+        return <RegexTool />;
+      case 'time':
+        return <TimeUnitsTool />;
+      case 'bson':
+        return <BSONTool />;
       default:
         return (
           <div className="h-full flex items-center justify-center">

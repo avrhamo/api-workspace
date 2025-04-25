@@ -1,20 +1,25 @@
 {
-    "appId": "com.api-workplace.app",
+    "appId": "com.api-workspace.app",
     "productName": "API Workplace",
     "directories": {
-      "output": "release"
+      "output": "release/${version}"
     },
     "files": [
       "dist/**/*",
       "dist-electron/**/*"
     ],
     "mac": {
-      "category": "public.app-category.developer-tools"
+      "artifactName": "${productName}_${version}.${ext}",
+      "target": ["dmg"]
     },
     "win": {
       "target": [
-        "nsis"
-      ]
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "${productName}_${version}.${ext}"
     },
     "linux": {
       "target": [
@@ -22,5 +27,11 @@
         "deb"
       ],
       "category": "Development"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
     }
   }
