@@ -9,15 +9,29 @@ const activeCursors = new Map();
 const isDev = process.env.NODE_ENV === 'development';
 
 async function createWindow() {
+  // Log the preload script path
+  const preloadPath = path.join(__dirname, 'preload.js');
+  console.log('Preload script path:', preloadPath);
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      preload: preloadPath
     },
   });
+
+  // Add debugging for preload script loading
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('Window loaded successfully');
+  });
+
+  mainWindow.webContents.on('preload-error', (event, preloadPath, error) => {
+    console.error('Preload script error:', error);
+  });
+
   // Set up error handling
   mainWindow.webContents.on('render-process-gone', () => {
     console.error('Renderer process crashed');
@@ -41,6 +55,18 @@ ipcMain.handle('mongodb:connect', async (_, connectionString: string) => {
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mongodb:findOne', async (_, database: string, collection: string) => {
+  try {
+    if (!mongoClient) throw new Error('Not connected to MongoDB');
+    const db = mongoClient.db(database);
+    const col = db.collection(collection);
+    const document = await col.findOne({});
+    return { success: true, document };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error occurred' };
   }
 });
 

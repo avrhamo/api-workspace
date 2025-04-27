@@ -14,7 +14,10 @@
     "electron:build": "npm run electron:tsc && vite build && electron-builder",
     "electron:build:dev": "npm run electron:tsc && vite build && cross-env NODE_ENV=development npm run electron:tsc && concurrently \"vite\" \"electron .\"",
     "electron:preview": "cross-env NODE_ENV=production npm run electron:tsc && vite preview && electron .",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "start": "npm run electron:dev",
+    "watch": "concurrently \"npm run electron:tsc -- --watch\" \"vite\" \"electron .\"",
+    "dev:hot": "cross-env NODE_ENV=development concurrently \"npm run electron:tsc -- --watch\" \"vite\" \"electron .\""
   },
   "dependencies": {
     "@headlessui/react": "^2.2.2",

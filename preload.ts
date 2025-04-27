@@ -9,19 +9,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('mongodb:listCollections', dbName),
   executeTest: (config: any) => 
     ipcRenderer.invoke('mongodb:executeTest', config),
-  findOne: async (database: string, collection: string) => {
-    const response = await fetch('http://localhost:3001/api/mongodb', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'findOne',
-        database,
-        collection,
-        connectionString: 'mongodb://localhost:27017' // You might want to store this somewhere else
-      })
-    });
-    return response.json();
-  }
+  findOne: (database: string, collection: string) => 
+    ipcRenderer.invoke('mongodb:findOne', database, collection)
 }) 

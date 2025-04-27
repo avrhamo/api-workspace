@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
+// Add debugging
+console.log('Preload script is running');
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 electron_1.contextBridge.exposeInMainWorld('electronAPI', {
@@ -14,12 +16,19 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     getNextBatch: (cursorId, batchSize) => electron_1.ipcRenderer.invoke('mongodb:getNextBatch', cursorId, batchSize),
     closeCursor: (cursorId) => electron_1.ipcRenderer.invoke('mongodb:closeCursor', cursorId),
     // Test Execution
-    executeTest: (config) => electron_1.ipcRenderer.invoke('api:executeTest', config),
+    executeTest: (config) => electron_1.ipcRenderer.invoke('mongodb:executeTest', config),
     // System operations
     isDarkMode: () => electron_1.ipcRenderer.invoke('dark-mode:get'),
     toggleDarkMode: () => electron_1.ipcRenderer.invoke('dark-mode:toggle'),
     // File operations
     readFile: (filePath) => electron_1.ipcRenderer.invoke('file:read', filePath),
     writeFile: (filePath, content) => electron_1.ipcRenderer.invoke('file:write', filePath, content),
+    // New method
+    findOne: (database, collection) => {
+        console.log('findOne called with:', { database, collection });
+        return electron_1.ipcRenderer.invoke('mongodb:findOne', database, collection);
+    }
 });
+// Add debugging
+console.log('Preload script finished');
 //# sourceMappingURL=preload.js.map
