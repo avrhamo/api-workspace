@@ -1,13 +1,21 @@
 import React, { useState, useEffect } from 'react';
 
+interface ConnectionConfig {
+  connectionString: string;
+  database?: string;
+  collection?: string;
+}
+
 interface DatabaseCollectionSelectorProps {
+  connectionConfig: ConnectionConfig;
   onSelect: (database: string, collection: string) => void;
   onBack?: () => void;
 }
 
 export const DatabaseCollectionSelector: React.FC<DatabaseCollectionSelectorProps> = ({
+  connectionConfig,
   onSelect,
-  onBack,
+  onBack
 }) => {
   const [databases, setDatabases] = useState<string[]>([]);
   const [collections, setCollections] = useState<string[]>([]);
@@ -93,21 +101,6 @@ export const DatabaseCollectionSelector: React.FC<DatabaseCollectionSelectorProp
   return (
     <div className="space-y-6">
       <div className="flex items-center mb-6">
-        {onBack && (
-          <button
-            onClick={onBack}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 
-              shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 
-              bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 
-              focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 
-              dark:focus:ring-offset-gray-900"
-          >
-            <svg className="-ml-1 mr-2 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
-            </svg>
-            Back
-          </button>
-        )}
         <h3 className="text-lg font-medium text-gray-900 dark:text-white flex-1 text-center">
           Select Database and Collection
         </h3>

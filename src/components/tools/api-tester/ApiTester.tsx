@@ -12,7 +12,13 @@ interface ConnectionConfig {
 }
 
 interface CurlConfig {
-  parsedCommand: any;
+  parsedCommand: {
+    rawCommand: string;
+    method?: string;
+    url?: string;
+    headers?: Record<string, string>;
+    data?: any;
+  };
   mappedFields: Record<string, string>;
 }
 
@@ -28,7 +34,9 @@ export const ApiTester: React.FC = () => {
     connectionString: 'mongodb://localhost:27017',
   });
   const [curlConfig, setCurlConfig] = useState<CurlConfig>({
-    parsedCommand: null,
+    parsedCommand: {
+      rawCommand: ''
+    },
     mappedFields: {},
   });
   const [testConfig, setTestConfig] = useState<TestConfig>({
@@ -36,6 +44,7 @@ export const ApiTester: React.FC = () => {
     isAsync: false,
     batchSize: 100,
   });
+  const [availableFields, setAvailableFields] = useState<string[]>([]);
 
   const handleDatabaseSelect = async (db: string, collection: string) => {
     setConnectionConfig(prev => ({
@@ -43,7 +52,32 @@ export const ApiTester: React.FC = () => {
       database: db,
       collection: collection
     }));
+
+    try {
+      // Fetch a sample document to extract fields
+      const result = await window.electronAPI.findOne(db, collection);
+      if (result.success && result.document) {
+        const fields = extractDocumentFields(result.document);
+        setAvailableFields(fields);
+      }
+    } catch (error) {
+      console.error('Failed to fetch sample document:', error);
+    }
+
     setStep(3);
+  };
+
+  // Helper function to extract fields from document
+  const extractDocumentFields = (doc: any, prefix = ''): string[] => {
+    if (!doc) return [];
+    
+    return Object.entries(doc).flatMap(([key, value]) => {
+      const fullPath = prefix ? `${prefix}.${key}` : key;
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return extractDocumentFields(value, fullPath);
+      }
+      return [fullPath];
+    });
   };
 
   const steps = [
@@ -115,6 +149,7 @@ export const ApiTester: React.FC = () => {
           
           {step === 2 && (
             <DatabaseCollectionSelector
+              connectionConfig={connectionConfig}
               onSelect={handleDatabaseSelect}
               onBack={() => setStep(1)}
             />
@@ -122,13 +157,15 @@ export const ApiTester: React.FC = () => {
 
           {step === 3 && (
             <CurlCommandInput
-              onParse={(parsedCommand) => {
+              initialCommand={curlConfig.parsedCommand.rawCommand}
+              onCommandChange={(parsedCommand) => {
                 setCurlConfig(prev => ({
                   ...prev,
                   parsedCommand
                 }));
                 setStep(4);
               }}
+              availableFields={availableFields}
               onBack={() => setStep(2)}
             />
           )}
@@ -154,6 +191,8 @@ export const ApiTester: React.FC = () => {
               curlConfig={curlConfig}
               testConfig={testConfig}
               onConfigChange={setTestConfig}
+              onConnectionConfigChange={setConnectionConfig}
+              onCurlConfigChange={setCurlConfig}
               onBack={() => setStep(4)}
             />
           )}

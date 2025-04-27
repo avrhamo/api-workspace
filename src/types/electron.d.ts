@@ -6,6 +6,21 @@ export interface ElectronAPI {
   listCollections: (dbName: string) => Promise<{ success: boolean; collections?: any[]; error?: string }>;
   executeTest: (config: any) => Promise<{ success: boolean; results?: any[]; error?: string }>;
   findOne: (database: string, collection: string) => Promise<{ success: boolean; document?: any; error?: string }>;
+  executeRequest: (request: {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    data: any;
+    mappedFields: Record<string, string>;
+    connectionConfig: {
+      connectionString: string;
+      database?: string;
+      collection?: string;
+    };
+  }) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
 }
 
 declare global {
