@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import { MongoClient, Db, Collection } from 'mongodb';
+import fetch from 'node-fetch';
 
 let mainWindow: BrowserWindow | null = null;
 let mongoClient: MongoClient | null = null;
@@ -147,6 +148,41 @@ ipcMain.handle('mongodb:closeCursor', async (_, cursorId: string) => {
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
+  }
+});
+
+// API Request Execution Handler
+ipcMain.handle('api:executeRequest', async (_, config) => {
+  const { method = 'GET', url, headers = {}, data, mappedFields, connectionConfig } = config;
+  const startTime = Date.now();
+  try {
+    const fetchOptions: any = {
+      method,
+      headers,
+    };
+    if (data) {
+      fetchOptions.body = typeof data === 'string' ? data : JSON.stringify(data);
+      if (!headers['Content-Type']) {
+        fetchOptions.headers['Content-Type'] = 'application/json';
+      }
+    }
+    const response = await fetch(url, fetchOptions);
+    const responseBody = await response.text();
+    const duration = Date.now() - startTime;
+    return {
+      success: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      body: responseBody,
+      duration,
+    };
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      duration,
+    };
   }
 });
 

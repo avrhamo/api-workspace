@@ -13,9 +13,13 @@ export interface MongoField {
 
 export function parseCurl(curl: string): CurlCommand {
   const methodMatch = curl.match(/-X\s+(\w+)/i);
-  const urlMatch = curl.match(/['"]([^'"]+)['"]/);
-  const headerMatches = curl.matchAll(/-H\s+['"]([^'"]+)['"]/g);
-  const bodyMatch = curl.match(/-d\s+['"]([^'"]+)['"]/);
+  const urlMatch = curl.match(/['\"]([^'\"]+)['\"]/);
+  // Support both -H and --header, and allow multiple spaces
+  const headerMatches = [
+    ...curl.matchAll(/(?:-H|--header)\s+['\"]([^'\"]+)['\"]/g)
+  ];
+  // Support -d, --data, and --data-raw
+  const bodyMatch = curl.match(/(?:-d|--data|--data-raw)\s+['\"]([^'\"]+)['\"]/);
 
   if (!urlMatch) {
     throw new Error('Invalid CURL command: URL not found');
@@ -24,8 +28,13 @@ export function parseCurl(curl: string): CurlCommand {
   const headers: Record<string, string> = {};
   for (const match of headerMatches) {
     const [_, header] = match;
-    const [key, value] = header.split(':').map(s => s.trim());
-    headers[key] = value;
+    // Only split on the first colon to allow colons in values
+    const colonIndex = header.indexOf(':');
+    if (colonIndex !== -1) {
+      const key = header.slice(0, colonIndex).trim();
+      const value = header.slice(colonIndex + 1).trim();
+      headers[key] = value;
+    }
   }
 
   return {

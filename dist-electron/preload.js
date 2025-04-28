@@ -17,6 +17,8 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     closeCursor: (cursorId) => electron_1.ipcRenderer.invoke('mongodb:closeCursor', cursorId),
     // Test Execution
     executeTest: (config) => electron_1.ipcRenderer.invoke('mongodb:executeTest', config),
+    // API Request Execution
+    executeRequest: (config) => electron_1.ipcRenderer.invoke('api:executeRequest', config),
     // System operations
     isDarkMode: () => electron_1.ipcRenderer.invoke('dark-mode:get'),
     toggleDarkMode: () => electron_1.ipcRenderer.invoke('dark-mode:toggle'),

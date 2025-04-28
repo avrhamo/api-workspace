@@ -175,6 +175,10 @@ export const ApiTester: React.FC = () => {
               parsedCommand={curlConfig.parsedCommand}
               connectionConfig={connectionConfig}
               onMap={(mappedFields) => {
+                console.log('[CURL FIELD MAPPER] Proceeding to test with:', {
+                  parsedCommand: curlConfig.parsedCommand,
+                  mappedFields
+                });
                 setCurlConfig(prev => ({
                   ...prev,
                   mappedFields

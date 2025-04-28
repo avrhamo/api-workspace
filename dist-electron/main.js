@@ -32,10 +32,14 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
 const mongodb_1 = require("mongodb");
+const node_fetch_1 = __importDefault(require("node-fetch"));
 let mainWindow = null;
 let mongoClient = null;
 const activeCursors = new Map();
@@ -176,6 +180,41 @@ electron_1.ipcMain.handle('mongodb:closeCursor', async (_, cursorId) => {
     }
     catch (error) {
         return { success: false, error: error.message };
+    }
+});
+// API Request Execution Handler
+electron_1.ipcMain.handle('api:executeRequest', async (_, config) => {
+    const { method = 'GET', url, headers = {}, data, mappedFields, connectionConfig } = config;
+    const startTime = Date.now();
+    try {
+        const fetchOptions = {
+            method,
+            headers,
+        };
+        if (data) {
+            fetchOptions.body = typeof data === 'string' ? data : JSON.stringify(data);
+            if (!headers['Content-Type']) {
+                fetchOptions.headers['Content-Type'] = 'application/json';
+            }
+        }
+        const response = await (0, node_fetch_1.default)(url, fetchOptions);
+        const responseBody = await response.text();
+        const duration = Date.now() - startTime;
+        return {
+            success: response.ok,
+            status: response.status,
+            statusText: response.statusText,
+            body: responseBody,
+            duration,
+        };
+    }
+    catch (error) {
+        const duration = Date.now() - startTime;
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            duration,
+        };
     }
 });
 // App lifecycle handlers

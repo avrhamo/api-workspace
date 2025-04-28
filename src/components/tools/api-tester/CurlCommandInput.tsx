@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CurlAnalyzer } from './components/CurlAnalyzer';
 import MonacoEditor from '../../common/editor/MonacoEditor';
 import { useTheme } from '../../../hooks/useTheme';
+import { parseCurl } from './utils';
 
 interface CurlCommandInputProps {
   initialCommand?: string;
@@ -50,9 +51,13 @@ export const CurlCommandInput: React.FC<CurlCommandInputProps> = ({
   const handleSubmit = () => {
     try {
       if (curlCommand && curlCommand.trim()) {
-        // Here you would typically parse the CURL command
+        const parsed = parseCurl(curlCommand);
         onCommandChange({
-          rawCommand: curlCommand
+          rawCommand: curlCommand,
+          method: parsed.method,
+          url: parsed.url,
+          headers: parsed.headers,
+          data: parsed.body
         });
       } else {
         setError('Please enter a valid CURL command');

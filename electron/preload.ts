@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld(
     // Test Execution
     executeTest: (config: any) =>
       ipcRenderer.invoke('mongodb:executeTest', config),
+
+    // API Request Execution
+    executeRequest: (config: any) =>
+      ipcRenderer.invoke('api:executeRequest', config),
     
     // System operations
     isDarkMode: () => 
