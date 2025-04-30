@@ -8,7 +8,7 @@ const BSONTool: React.FC = () => {
       <div className="flex-1">
         <MonacoEditor
           value=""
-          onChange={(value) => console.log(value)}
+          onChange={(value) => {}}
           language="json"
         />
       </div>

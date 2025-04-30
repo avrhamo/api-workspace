@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { CurlAnalyzer } from './components/CurlAnalyzer';
 import MonacoEditor from '../../common/editor/MonacoEditor';
 import { useTheme } from '../../../hooks/useTheme';
 import { parseCurl } from './utils';
@@ -24,7 +23,6 @@ export const CurlCommandInput: React.FC<CurlCommandInputProps> = ({
   availableFields = [] // Provide default empty array
 }) => {
   const [curlCommand, setCurlCommand] = useState(initialCommand);
-  const [mappedFields, setMappedFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const { theme } = useTheme();
 
@@ -33,13 +31,6 @@ export const CurlCommandInput: React.FC<CurlCommandInputProps> = ({
   const handleCurlChange = (value: string | undefined) => {
     setCurlCommand(value || '');
     setError(null);
-  };
-
-  const handleFieldMap = (field: string, value: string) => {
-    setMappedFields(prev => ({
-      ...prev,
-      [field]: value
-    }));
   };
 
   const isValidCurlCommand = (cmd: string | undefined): boolean => {
@@ -52,17 +43,50 @@ export const CurlCommandInput: React.FC<CurlCommandInputProps> = ({
     try {
       if (curlCommand && curlCommand.trim()) {
         const parsed = parseCurl(curlCommand);
-        onCommandChange({
-          rawCommand: curlCommand,
-          method: parsed.method,
-          url: parsed.url,
-          headers: parsed.headers,
-          data: parsed.body
-        });
+        
+        // Ensure we have a valid JSON body for POST/PUT/PATCH requests
+        if (['POST', 'PUT', 'PATCH'].includes(parsed.method) && !parsed.body) {
+          throw new Error('Request body is required for ' + parsed.method + ' requests');
+        }
+
+        // Validate that the body is a proper object for JSON requests
+        if (parsed.headers['Content-Type']?.toLowerCase().includes('application/json')) {
+          if (typeof parsed.body === 'string') {
+            try {
+              const jsonBody = JSON.parse(parsed.body);
+              onCommandChange({
+                rawCommand: curlCommand,
+                method: parsed.method,
+                url: parsed.url,
+                headers: parsed.headers,
+                data: jsonBody
+              });
+            } catch (err) {
+              throw new Error('Invalid JSON in request body: ' + (err instanceof Error ? err.message : String(err)));
+            }
+          } else {
+            onCommandChange({
+              rawCommand: curlCommand,
+              method: parsed.method,
+              url: parsed.url,
+              headers: parsed.headers,
+              data: parsed.body
+            });
+          }
+        } else {
+          onCommandChange({
+            rawCommand: curlCommand,
+            method: parsed.method,
+            url: parsed.url,
+            headers: parsed.headers,
+            data: parsed.body
+          });
+        }
       } else {
         setError('Please enter a valid CURL command');
       }
     } catch (err) {
+      console.error('Error parsing curl command:', err);
       setError(err instanceof Error ? err.message : 'Failed to parse CURL command');
     }
   };
@@ -73,13 +97,16 @@ export const CurlCommandInput: React.FC<CurlCommandInputProps> = ({
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
           Enter CURL Command
         </label>
-        <div className="relative h-32">
-          <MonacoEditor
-            value={curlCommand}
-            onChange={handleCurlChange}
-            language="shell"
-            theme={editorTheme}
-          />
+        <div className="relative" style={{ height: 220 }}>
+          <div className="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+            <MonacoEditor
+              value={curlCommand}
+              onChange={handleCurlChange}
+              language="shell"
+              theme={editorTheme}
+              height={220}
+            />
+          </div>
           {error && (
             <div className="mt-2 text-sm text-red-600 dark:text-red-400">
               {error}
@@ -88,24 +115,11 @@ export const CurlCommandInput: React.FC<CurlCommandInputProps> = ({
         </div>
       </div>
 
-      {curlCommand && (
-        <div className="mt-6">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-            CURL Analysis
-          </h3>
-          <CurlAnalyzer
-            curlCommand={curlCommand}
-            onFieldMap={handleFieldMap}
-            availableFields={availableFields}
-          />
-        </div>
-      )}
-
-      <div className="flex justify-between pt-6">
+      <div className="flex justify-between items-center pt-8 gap-4">
         {onBack && (
           <button
             onClick={onBack}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
+            className="inline-flex items-center h-12 px-6 border border-gray-300 dark:border-gray-600 rounded-md text-base font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
           >
             Back
           </button>
@@ -114,7 +128,7 @@ export const CurlCommandInput: React.FC<CurlCommandInputProps> = ({
           onClick={handleSubmit}
           disabled={!isValidCurlCommand(curlCommand)}
           className={`
-            inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white
+            inline-flex items-center h-12 px-6 border border-transparent rounded-md shadow-sm text-base font-medium text-white
             ${!isValidCurlCommand(curlCommand)
               ? 'bg-gray-400 cursor-not-allowed'
               : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'

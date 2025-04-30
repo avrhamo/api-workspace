@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { XMarkIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { XMarkIcon, MagnifyingGlassIcon, PlusIcon, MinusIcon } from '@heroicons/react/24/outline';
 
 interface CurlAnalyzerProps {
   curlCommand: string;
@@ -15,41 +15,259 @@ interface ParsedCurl {
     queryParams: { [key: string]: string };
   };
   headers: { [key: string]: string };
-  body: any;
+  body: Record<string, unknown> | string | null;
 }
 
-interface MappingPopupProps {
+interface PanelState {
   isOpen: boolean;
-  onClose: () => void;
-  position: { x: number; y: number };
-  availableFields: string[];
-  onSelect: (field: string) => void;
+  position: { top: number; right: number; left: number; bottom: number };
+  fieldPath: string;
   fieldType: string;
-  fieldValue: string;
 }
 
-const MappingPopup: React.FC<MappingPopupProps> = ({
+interface FixedValueConfig {
+  type: 'string' | 'number' | 'boolean' | 'date';
+  value: string;
+  isRandom: boolean;
+  regex?: string;
+}
+
+interface SpecialFieldConfig {
+  type: 'uuid';
+}
+
+type MappingType = 'mongodb' | 'fixed' | 'special';
+
+interface MappingPanelProps {
+  isOpen: boolean;
+  initialPosition: { top: number; right: number; left: number; bottom: number };
+  onClose: () => void;
+  availableFields: string[];
+  onSelect: (field: string, config?: FixedValueConfig | SpecialFieldConfig) => void;
+  fieldPath: string;
+}
+
+const ClickableKey: React.FC<{
+  fieldKey: string;
+  path: string;
+  isDisabled?: boolean;
+  onKeyClick: (path: string, type: string, event: React.MouseEvent) => void;
+}> = ({ fieldKey, path, isDisabled = false, onKeyClick }) => (
+  <button
+    onClick={(e) => !isDisabled && onKeyClick(path, 'bodyField', e)}
+    className={`
+      font-mono text-sm rounded px-1.5 py-0.5 transition-colors duration-150
+      ${isDisabled 
+        ? 'text-gray-500 dark:text-gray-600 cursor-not-allowed'
+        : 'text-blue-500 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 hover:text-blue-600 dark:hover:text-blue-300'
+      }
+    `}
+    aria-label={`Map field ${fieldKey}`}
+    role="button"
+    tabIndex={isDisabled ? -1 : 0}
+  >
+    {fieldKey}
+  </button>
+);
+
+const MappingPanel: React.FC<MappingPanelProps> = ({
   isOpen,
+  initialPosition,
   onClose,
-  position,
   availableFields,
   onSelect,
-  fieldType,
-  fieldValue
+  fieldPath
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const popupRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<MappingType>('mongodb');
+  const [fixedValueConfig, setFixedValueConfig] = useState<FixedValueConfig>({
+    type: 'string',
+    value: '',
+    isRandom: false
+  });
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [positionStyle, setPositionStyle] = useState<React.CSSProperties>({});
 
+  // Recalculate position when panel opens or initial position changes
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
-        onClose();
+    if (!isOpen) return;
+
+    const updatePosition = () => {
+      if (!panelRef.current) return;
+
+      const panelHeight = panelRef.current.offsetHeight;
+      const windowHeight = window.innerHeight;
+      const windowWidth = window.innerWidth;
+      const panelWidth = 384; // w-96 = 24rem = 384px
+
+      // Calculate vertical position
+      let top = initialPosition.top;
+      
+      // If panel would extend below viewport, position it above the click point
+      if (top + panelHeight > windowHeight) {
+        top = initialPosition.bottom - panelHeight;
       }
+
+      // Calculate horizontal position
+      let left = initialPosition.left - panelWidth;
+      
+      // If panel would go off left edge, position it to the right of click point
+      if (left < 0) {
+        left = initialPosition.right;
+      }
+
+      setPositionStyle({
+        position: 'fixed',
+        top: `${top}px`,
+        left: `${left}px`,
+        maxHeight: '95vh',
+        width: `${panelWidth}px`,
+        zIndex: 50 // Ensure panel stays on top
+      });
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
+    // Initial position calculation
+    requestAnimationFrame(() => {
+      updatePosition();
+    });
+
+    // Update position on window resize
+    window.addEventListener('resize', updatePosition);
+    return () => window.removeEventListener('resize', updatePosition);
+  }, [isOpen, initialPosition]);
+
+  const handleFixedValueSubmit = () => {
+    onSelect('fixedValue', fixedValueConfig);
+    onClose();
+  };
+
+  const handleSpecialFieldSubmit = () => {
+    onSelect('specialValue', { type: 'uuid' });
+    onClose();
+  };
+
+  const renderMongoDBTab = () => (
+    <>
+      <div className="relative mb-4">
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search fields..."
+          className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent"
+          aria-label="Search fields"
+        />
+        <MagnifyingGlassIcon className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+      </div>
+
+      <div className="max-h-[40vh] overflow-y-auto rounded-md border border-gray-200 dark:border-gray-600 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
+        {filteredFields.length > 0 ? (
+          <div className="divide-y divide-gray-200 dark:divide-gray-600">
+            {filteredFields.map((field, index) => (
+              <button
+                key={index}
+                onClick={() => onSelect(field)}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                aria-label={`Select field ${field}`}
+              >
+                <span className="font-mono">{field}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+            No matching fields found
+          </div>
+        )}
+      </div>
+    </>
+  );
+
+  const renderFixedValueTab = () => (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Value Type
+        </label>
+        <select
+          value={fixedValueConfig.type}
+          onChange={(e) => setFixedValueConfig(prev => ({ ...prev, type: e.target.value as FixedValueConfig['type'] }))}
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent"
+          aria-label="Select value type"
+        >
+          <option value="string">String</option>
+          <option value="number">Number</option>
+          <option value="boolean">Boolean</option>
+          <option value="date">Date</option>
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Value
+        </label>
+        <div className="flex items-center space-x-2">
+          <input
+            type={fixedValueConfig.type === 'number' ? 'number' : 'text'}
+            value={fixedValueConfig.value}
+            onChange={(e) => setFixedValueConfig(prev => ({ ...prev, value: e.target.value }))}
+            disabled={fixedValueConfig.isRandom}
+            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent disabled:opacity-50"
+            placeholder={fixedValueConfig.isRandom ? 'Random value will be generated' : 'Enter value'}
+          />
+          <button
+            onClick={() => setFixedValueConfig(prev => ({ ...prev, isRandom: !prev.isRandom }))}
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+          >
+            {fixedValueConfig.isRandom ? 'Fixed' : 'Random'}
+          </button>
+        </div>
+      </div>
+
+      {fixedValueConfig.isRandom && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Regex Pattern (optional)
+          </label>
+          <input
+            type="text"
+            value={fixedValueConfig.regex || ''}
+            onChange={(e) => setFixedValueConfig(prev => ({ ...prev, regex: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent"
+            placeholder="Enter regex pattern for random value"
+          />
+        </div>
+      )}
+
+      <button
+        onClick={handleFixedValueSubmit}
+        className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+      >
+        Apply Fixed Value
+      </button>
+    </div>
+  );
+
+  const renderSpecialFieldTab = () => (
+    <div className="space-y-4">
+      <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-md">
+        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Available Special Fields
+        </h4>
+        <div className="space-y-2">
+          <button
+            onClick={handleSpecialFieldSubmit}
+            className="w-full px-4 py-2 text-left border border-gray-200 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+          >
+            <span className="font-mono">UUID</span>
+            <span className="block text-sm text-gray-500 dark:text-gray-400">
+              Generate a new UUID
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   const filteredFields = availableFields.filter(field =>
     field.toLowerCase().includes(searchTerm.toLowerCase())
@@ -58,63 +276,207 @@ const MappingPopup: React.FC<MappingPopupProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div
-      ref={popupRef}
-      className="fixed z-50 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 w-64"
-      style={{ top: position.y + 'px', left: position.x + 'px' }}
-    >
-      <div className="p-4">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-sm font-medium text-gray-900 dark:text-white">
-            Map {fieldType}: {fieldValue}
-          </h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
-          >
-            <XMarkIcon className="h-4 w-4" />
-          </button>
-        </div>
-        
-        <div className="relative mb-3">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search fields..."
-            className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm dark:bg-gray-700 dark:text-white"
-          />
-          <MagnifyingGlassIcon className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-        </div>
+    <>
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 bg-black/25 backdrop-blur-sm z-40" 
+        aria-hidden="true"
+        onClick={onClose}
+      />
+      
+      {/* Panel */}
+      <div
+        ref={panelRef}
+        style={positionStyle}
+        className={`
+          bg-white dark:bg-gray-800 shadow-xl border border-gray-200 dark:border-gray-700
+          z-50 flex flex-col rounded-lg overflow-hidden
+        `}
+      >
+        <div className="h-full flex flex-col">
+          <div className="flex-none p-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Map Field: <span className="font-mono text-blue-600 dark:text-blue-400 text-base">{fieldPath}</span>
+              </h3>
+              <button
+                onClick={onClose}
+                aria-label="Close mapping panel"
+                className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 rounded-full p-1"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+          </div>
 
-        <div className="max-h-48 overflow-y-auto">
-          {filteredFields.map((field, index) => (
-            <button
-              key={index}
-              onClick={() => onSelect(field)}
-              className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-            >
-              {field}
-            </button>
-          ))}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4">
+              <div className="border-b border-gray-200 dark:border-gray-700 mb-4">
+                <nav className="-mb-px flex space-x-8" aria-label="Mapping options">
+                  <button
+                    onClick={() => setActiveTab('mongodb')}
+                    className={`
+                      py-2 px-1 border-b-2 font-medium text-sm
+                      ${activeTab === 'mongodb'
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                      }
+                    `}
+                  >
+                    MongoDB Field
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('fixed')}
+                    className={`
+                      py-2 px-1 border-b-2 font-medium text-sm
+                      ${activeTab === 'fixed'
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                      }
+                    `}
+                  >
+                    Fixed Value
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('special')}
+                    className={`
+                      py-2 px-1 border-b-2 font-medium text-sm
+                      ${activeTab === 'special'
+                        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                      }
+                    `}
+                  >
+                    Special Field
+                  </button>
+                </nav>
+              </div>
+
+              <div className="mt-4">
+                {activeTab === 'mongodb' && renderMongoDBTab()}
+                {activeTab === 'fixed' && renderFixedValueTab()}
+                {activeTab === 'special' && renderSpecialFieldTab()}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 };
 
-const ClickableWord: React.FC<{
-  value: string;
-  type: string;
-  onWordClick: (value: string, type: string, event: React.MouseEvent) => void;
-}> = ({ value, type, onWordClick }) => (
-  <button
-    onClick={(e) => onWordClick(value, type, e)}
-    className="px-1.5 py-0.5 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-600 dark:text-blue-400 font-mono border border-transparent hover:border-blue-200 dark:hover:border-blue-800 transition-colors duration-150"
-  >
-    {value}
-  </button>
-);
+const JsonTree: React.FC<{
+  data: Record<string, unknown> | unknown[];
+  path?: string;
+  selectedPath?: string;
+  onKeyClick: (path: string, type: string, event: React.MouseEvent) => void;
+}> = React.memo(({ data, path = '', selectedPath, onKeyClick }) => {
+  const isChildOfSelected = Boolean(selectedPath && path.startsWith(selectedPath + '.'));
+  const isSelected = selectedPath === path;
+
+  const renderValue = useCallback((value: unknown, key: string, fieldPath: string) => {
+    if (value === null) {
+      return (
+        <div className="flex items-baseline py-1">
+          <ClickableKey 
+            fieldKey={key} 
+            path={fieldPath}
+            isDisabled={isChildOfSelected}
+            onKeyClick={onKeyClick}
+          />
+          <span className="ml-2 text-gray-400">: null</span>
+        </div>
+      );
+    }
+
+    if (Array.isArray(value)) {
+      return (
+        <div className="py-1">
+          <div className="flex items-baseline">
+            <ClickableKey 
+              fieldKey={key} 
+              path={fieldPath}
+              isDisabled={isChildOfSelected}
+              onKeyClick={onKeyClick}
+            />
+            <span className="ml-2 text-gray-400">: [</span>
+          </div>
+          <div className="ml-6 border-l-2 border-gray-700 dark:border-gray-600 pl-4">
+            {value.map((item, index) => (
+              <div key={index} className="py-0.5">
+                {renderValue(item, `${index}`, `${fieldPath}[${index}]`)}
+                {index < value.length - 1 && <span className="text-gray-400">,</span>}
+              </div>
+            ))}
+          </div>
+          <span className="text-gray-400">]</span>
+        </div>
+      );
+    }
+
+    if (typeof value === 'object' && value !== null) {
+      return (
+        <div className="py-1">
+          <div className="flex items-baseline">
+            <ClickableKey 
+              fieldKey={key} 
+              path={fieldPath}
+              isDisabled={isChildOfSelected}
+              onKeyClick={onKeyClick}
+            />
+            <span className="ml-2 text-gray-400">: {`{`}</span>
+          </div>
+          <div className="ml-6 border-l-2 border-gray-700 dark:border-gray-600 pl-4">
+            {Object.entries(value as Record<string, unknown>).map(([k, v], index, arr) => {
+              const newPath = fieldPath ? `${fieldPath}.${k}` : k;
+              return (
+                <div key={k} className="py-0.5">
+                  {renderValue(v, k, newPath)}
+                  {index < arr.length - 1 && <span className="text-gray-400">,</span>}
+                </div>
+              );
+            })}
+          </div>
+          <span className="text-gray-400">{'}'}</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-baseline py-1">
+        <ClickableKey 
+          fieldKey={key} 
+          path={fieldPath}
+          isDisabled={isChildOfSelected}
+          onKeyClick={onKeyClick}
+        />
+        <span className={`ml-2 ${isChildOfSelected ? 'text-gray-500 dark:text-gray-600' : 'text-emerald-500 dark:text-emerald-400'}`}>
+          : {typeof value === 'string' ? `"${value}"` : String(value)}
+        </span>
+      </div>
+    );
+  }, [isChildOfSelected, onKeyClick]);
+
+  if (typeof data === 'object' && data !== null) {
+    return (
+      <div className="space-y-1">
+        {Object.entries(data as Record<string, unknown>).map(([key, value], index, arr) => {
+          const fieldPath = path ? `${path}.${key}` : key;
+          return (
+            <div key={key}>
+              {renderValue(value, key, fieldPath)}
+              {index < arr.length - 1 && <span className="text-gray-400">,</span>}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return null;
+});
+
+JsonTree.displayName = 'JsonTree';
 
 export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
   curlCommand,
@@ -122,42 +484,44 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
   availableFields
 }) => {
   const [parsedCurl, setParsedCurl] = useState<ParsedCurl | null>(null);
-  const [popupState, setPopupState] = useState<{
-    isOpen: boolean;
-    position: { x: number; y: number };
-    fieldType: string;
-    fieldValue: string;
-  }>({
+  const [panelState, setPanelState] = useState<PanelState>({
     isOpen: false,
-    position: { x: 0, y: 0 },
-    fieldType: '',
-    fieldValue: ''
+    position: { top: 0, right: 0, left: 0, bottom: 0 },
+    fieldPath: '',
+    fieldType: ''
   });
+  const [selectedPath, setSelectedPath] = useState<string | undefined>();
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const parseCurlCommand = (curl: string) => {
-      // Enhanced parsing logic for the new format
-      const lines = curl.split('\n').map(line => line.trim());
-      const parsed: ParsedCurl = {
-        method: 'GET', // default
-        url: {
-          base: '',
-          pathParams: {},
-          queryParams: {}
-        },
-        headers: {},
-        body: null
-      };
+    const parseCurlCommand = (curl: string): ParsedCurl => {
+      try {
+        const lines = curl.split('\n').map(line => line.trim());
+        const parsed: ParsedCurl = {
+          method: '',
+          url: {
+            base: '',
+            pathParams: {},
+            queryParams: {}
+          },
+          headers: {},
+          body: null
+        };
 
-      // Parse the first line (URL and method)
-      const firstLine = lines[0];
-      const methodMatch = firstLine.match(/--request\s+(\w+)/);
-      if (methodMatch) {
-        parsed.method = methodMatch[1];
-      }
+        // Parse the first line (URL and method)
+        const firstLine = lines[0];
+        const methodMatch = firstLine.match(/--request\s+(\w+)/);
+        if (methodMatch) {
+          parsed.method = methodMatch[1];
+        } else {
+          parsed.method = 'GET';
+        }
 
-      const urlMatch = firstLine.match(/'([^']+)'/);
-      if (urlMatch) {
+        const urlMatch = firstLine.match(/'([^']+)'/);
+        if (!urlMatch) {
+          throw new Error('Invalid CURL command: URL not found');
+        }
+
         const url = urlMatch[1];
         const [basePath, queryString] = url.split('?');
         
@@ -186,127 +550,196 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
             }
           });
         }
-      }
 
-      // Parse headers
-      const headerLines = lines.filter(line => line.startsWith('--header'));
-      headerLines.forEach(line => {
-        const headerMatch = line.match(/--header\s+'([^:]+):\s*([^']+)'/);
-        if (headerMatch) {
-          const [_, key, value] = headerMatch;
-          parsed.headers[key] = value;
-        }
-      });
+        // Parse headers
+        const headerLines = lines.filter(line => line.startsWith('--header'));
+        headerLines.forEach(line => {
+          const headerMatch = line.match(/--header\s+'([^:]+):\s*([^']+)'/);
+          if (headerMatch) {
+            const [_, key, value] = headerMatch;
+            parsed.headers[key] = value;
+          }
+        });
 
-      // Parse body
-      const bodyLine = lines.find(line => line.includes('--data-raw'));
-      if (bodyLine) {
-        const bodyMatch = bodyLine.match(/--data-raw\s+'([^']+)'/);
-        if (bodyMatch) {
-          try {
-            parsed.body = JSON.parse(bodyMatch[1]);
-          } catch (e) {
-            parsed.body = bodyMatch[1];
+        // Parse body
+        const dataIndex = lines.findIndex(line => 
+          line.includes('--data') || 
+          line.includes('--data-raw') || 
+          line.includes('-d')
+        );
+
+        if (dataIndex !== -1) {
+          let bodyContent = '';
+          let i = dataIndex;
+          const currentLine = lines[i];
+          
+          const bodyStartMatch = currentLine.match(/(?:--data(?:-raw)?|-d)\s+'(.*)$/);
+          
+          if (bodyStartMatch) {
+            bodyContent = bodyStartMatch[1];
+            
+            if (!currentLine.endsWith("'") || currentLine.endsWith("\\'")) {
+              i++;
+              while (i < lines.length) {
+                const line = lines[i];
+                if (line.endsWith("'") && !line.endsWith("\\'")) {
+                  bodyContent += '\n' + line.slice(0, -1);
+                  break;
+                } else {
+                  bodyContent += '\n' + line;
+                }
+                i++;
+              }
+            }
+
+            bodyContent = bodyContent.trim();
+            
+            try {
+              if (bodyContent.startsWith("'") && bodyContent.endsWith("'")) {
+                bodyContent = bodyContent.slice(1, -1);
+              }
+              
+              bodyContent = bodyContent
+                .replace(/\\n/g, '\n')
+                .replace(/\\"/g, '"')
+                .replace(/\\'/g, "'")
+                .replace(/\\\\/g, '\\');
+
+              try {
+                parsed.body = JSON.parse(bodyContent);
+              } catch (firstError) {
+                const cleanContent = bodyContent
+                  .replace(/,\s*}/g, '}')
+                  .replace(/,\s*\]/g, ']')
+                  .replace(/\n\s*/g, '')
+                  .trim();
+                
+                parsed.body = JSON.parse(cleanContent);
+              }
+            } catch (error) {
+              parsed.body = bodyContent;
+            }
           }
         }
-      }
 
-      return parsed;
+        return parsed;
+      } catch (error) {
+        throw new Error(`Failed to parse CURL command: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     };
 
-    setParsedCurl(parseCurlCommand(curlCommand));
+    try {
+      setParsedCurl(parseCurlCommand(curlCommand));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to parse CURL command');
+      setParsedCurl(null);
+    }
   }, [curlCommand]);
 
-  const handleWordClick = (value: string, type: string, event: React.MouseEvent) => {
-    const rect = (event.target as HTMLElement).getBoundingClientRect();
-    setPopupState({
+  const handleKeyClick = useCallback((path: string, type: string, event: React.MouseEvent) => {
+    setSelectedPath(path);
+
+    // Get the bounding box of the clicked button
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+
+    setPanelState({
       isOpen: true,
       position: {
-        x: rect.left,
-        y: rect.bottom + window.scrollY
+        top: rect.top,      // Use top of clicked element
+        right: rect.right,  // Right edge of clicked element
+        left: rect.left,    // Left edge of clicked element
+        bottom: rect.bottom // Bottom of clicked element
       },
-      fieldType: type,
-      fieldValue: value
+      fieldPath: path,
+      fieldType: type
     });
-  };
+  }, []);
 
-  const handleFieldSelect = (selectedField: string) => {
-    onFieldMap(popupState.fieldValue, selectedField);
-    setPopupState(prev => ({ ...prev, isOpen: false }));
-  };
+  const handlePanelClose = useCallback(() => {
+    setPanelState(prev => ({ ...prev, isOpen: false }));
+    setSelectedPath(undefined);
+  }, []);
+
+  const handleFieldSelect = useCallback((selectedField: string, config?: FixedValueConfig | SpecialFieldConfig) => {
+    onFieldMap(panelState.fieldPath, selectedField);
+    handlePanelClose();
+  }, [onFieldMap, panelState.fieldPath, handlePanelClose]);
+
+  if (error) {
+    return (
+      <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4" role="alert">
+        <div className="flex">
+          <div className="ml-3">
+            <p className="text-sm text-red-700 dark:text-red-200">{error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!parsedCurl) return null;
 
   return (
-    <div className="space-y-6 bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+    <div className="space-y-6 bg-white dark:bg-gray-900 p-6 rounded-lg shadow" role="region" aria-label="CURL Analysis">
       {/* URL Section */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 flex items-center">
-          <span className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded text-xs mr-2">URL</span>
-          Request Path
-        </h3>
-        <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600">
-          <div className="flex items-center space-x-2 font-mono">
-            <ClickableWord
-              value={parsedCurl.method}
-              type="method"
-              onWordClick={handleWordClick}
-            />
-            <span className="text-gray-700 dark:text-gray-300">
-              {parsedCurl.url.base.split('/').map((part, index) => {
-                if (part.startsWith('{$P')) {
-                  return (
-                    <React.Fragment key={index}>
-                      /<ClickableWord
-                        value={part}
-                        type="pathParam"
-                        onWordClick={handleWordClick}
-                      />
-                    </React.Fragment>
-                  );
-                }
-                return '/' + part;
-              })}
-              {Object.keys(parsedCurl.url.queryParams).length > 0 && (
-                <span className="text-gray-400 dark:text-gray-500">?</span>
-              )}
-              {Object.entries(parsedCurl.url.queryParams).map(([key, value], index) => (
-                <React.Fragment key={key}>
-                  {index > 0 && (
-                    <span className="text-gray-400 dark:text-gray-500">&</span>
-                  )}
-                  <span className="text-gray-600 dark:text-gray-400">{key}</span>
-                  <span className="text-gray-400 dark:text-gray-500">=</span>
-                  <ClickableWord
-                    value={value}
-                    type="queryParam"
-                    onWordClick={handleWordClick}
-                  />
-                </React.Fragment>
-              ))}
-            </span>
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white">URL</h3>
+        <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+          <div className="flex items-center space-x-2 font-mono text-sm">
+            <span className="text-purple-600 dark:text-purple-400">{parsedCurl.method}</span>
+            <span className="text-gray-600 dark:text-gray-400">{parsedCurl.url.base}</span>
           </div>
+          
+          {/* Path Parameters */}
+          {Object.entries(parsedCurl.url.pathParams).length > 0 && (
+            <div className="mt-3">
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Path Parameters</h4>
+              <div className="space-y-1">
+                {Object.entries(parsedCurl.url.pathParams).map(([key, value]) => (
+                  <div key={key} className="flex items-center space-x-2">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{key}:</span>
+                    <ClickableKey fieldKey={key} path={`path.${key}`} onKeyClick={handleKeyClick} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Query Parameters */}
+          {Object.entries(parsedCurl.url.queryParams).length > 0 && (
+            <div className="mt-3">
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Query Parameters</h4>
+              <div className="space-y-1">
+                {Object.entries(parsedCurl.url.queryParams).map(([key, value]) => (
+                  <div key={key} className="flex items-center space-x-2">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{key}:</span>
+                    <ClickableKey fieldKey={key} path={`query.${key}`} onKeyClick={handleKeyClick} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Headers Section */}
       {Object.keys(parsedCurl.headers).length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 flex items-center">
-            <span className="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 px-2 py-0.5 rounded text-xs mr-2">HEADERS</span>
-            Request Headers
-          </h3>
-          <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600 space-y-2">
-            {Object.entries(parsedCurl.headers).map(([key, value]) => (
-              <div key={key} className="font-mono flex items-center">
-                <span className="text-gray-600 dark:text-gray-400 min-w-32">{key}: </span>
-                <ClickableWord
-                  value={value}
-                  type="header"
-                  onWordClick={handleWordClick}
-                />
-              </div>
-            ))}
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Headers</h3>
+          <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+            <div className="space-y-2">
+              {Object.entries(parsedCurl.headers).map(([key, value]) => (
+                <div key={key} className="flex items-center space-x-2">
+                  <ClickableKey
+                    fieldKey={key}
+                    path={`header.${key}`}
+                    onKeyClick={handleKeyClick}
+                  />
+                  <span className="text-gray-500 dark:text-gray-400">: {value}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -314,43 +747,37 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
       {/* Body Section */}
       {parsedCurl.body && (
         <div className="space-y-2">
-          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 flex items-center">
-            <span className="bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded text-xs mr-2">BODY</span>
-            Request Body
-          </h3>
-          <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600">
-            {typeof parsedCurl.body === 'string' ? (
-              <ClickableWord
-                value={parsedCurl.body}
-                type="body"
-                onWordClick={handleWordClick}
-              />
-            ) : (
-              <div className="space-y-1">
-                {Object.entries(parsedCurl.body).map(([key, value]) => (
-                  <div key={key} className="font-mono flex items-center">
-                    <span className="text-gray-600 dark:text-gray-400">{key}: </span>
-                    <ClickableWord
-                      value={value as string}
-                      type="bodyField"
-                      onWordClick={handleWordClick}
-                    />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Body</h3>
+          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <div className="p-4 font-mono text-sm overflow-auto">
+              {typeof parsedCurl.body === 'string' ? (
+                <div>
+                  <div className="text-yellow-500 dark:text-yellow-400 mb-2" role="alert">
+                    Warning: Body content could not be parsed as JSON
                   </div>
-                ))}
-              </div>
-            )}
+                  <pre className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+                    {parsedCurl.body}
+                  </pre>
+                </div>
+              ) : (
+                <JsonTree
+                  data={parsedCurl.body as Record<string, unknown>}
+                  onKeyClick={handleKeyClick}
+                  selectedPath={selectedPath}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      <MappingPopup
-        isOpen={popupState.isOpen}
-        onClose={() => setPopupState(prev => ({ ...prev, isOpen: false }))}
-        position={popupState.position}
+      <MappingPanel
+        isOpen={panelState.isOpen}
+        initialPosition={panelState.position}
+        onClose={handlePanelClose}
         availableFields={availableFields}
         onSelect={handleFieldSelect}
-        fieldType={popupState.fieldType}
-        fieldValue={popupState.fieldValue}
+        fieldPath={panelState.fieldPath}
       />
     </div>
   );

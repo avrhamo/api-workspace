@@ -100,15 +100,26 @@ export const TestExecutor: React.FC<TestExecutorProps> = ({
 
   const executeSingleRequest = async (): Promise<TestResult> => {
     const startTime = performance.now();
+    
+    // Ensure data is a proper object, not a string
+    let processedData = curlConfig.parsedCommand.data;
+    if (typeof processedData === 'string') {
+      try {
+        processedData = JSON.parse(processedData);
+      } catch (e) {
+        // If it's not valid JSON, leave it as is
+        console.warn('Failed to parse request body as JSON:', e);
+      }
+    }
+
     const requestConfig = {
       method: curlConfig.parsedCommand.method || 'GET',
       url: curlConfig.parsedCommand.url || '',
       headers: curlConfig.parsedCommand.headers || {},
-      data: curlConfig.parsedCommand.data,
+      data: processedData,
       mappedFields: curlConfig.mappedFields,
       connectionConfig
     };
-    console.log('[API TESTER] Executing request with config:', requestConfig);
     try {
       const response = await window.electronAPI.executeRequest(requestConfig);
       const endTime = performance.now();

@@ -1,8 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
-// Add debugging
-console.log('Preload script is running');
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 electron_1.contextBridge.exposeInMainWorld('electronAPI', {
@@ -27,10 +25,7 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     writeFile: (filePath, content) => electron_1.ipcRenderer.invoke('file:write', filePath, content),
     // New method
     findOne: (database, collection) => {
-        console.log('findOne called with:', { database, collection });
         return electron_1.ipcRenderer.invoke('mongodb:findOne', database, collection);
     }
 });
-// Add debugging
-console.log('Preload script finished');
 //# sourceMappingURL=preload.js.map

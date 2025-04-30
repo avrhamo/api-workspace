@@ -1,8 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-// Add debugging
-console.log('Preload script is running');
-
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld(
@@ -47,11 +44,7 @@ contextBridge.exposeInMainWorld(
 
     // New method
     findOne: (database: string, collection: string) => {
-      console.log('findOne called with:', { database, collection });
       return ipcRenderer.invoke('mongodb:findOne', database, collection);
     }
   }
 );
-
-// Add debugging
-console.log('Preload script finished');

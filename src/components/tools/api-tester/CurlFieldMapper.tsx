@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeftIcon, XCircleIcon } from '@heroicons/react/24/outline';
-import { CurlAnalyzerScreen } from './components/CurlAnalyzerScreen';
+import { CurlAnalyzer } from './components/CurlAnalyzer';
 
 interface ConnectionConfig {
   connectionString: string;
@@ -115,7 +115,7 @@ export const CurlFieldMapper: React.FC<CurlFieldMapperProps> = ({
 
       <div className="space-y-6">
         {/* CURL Analysis Section */}
-        <CurlAnalyzerScreen
+        <CurlAnalyzer
           curlCommand={parsedCommand.rawCommand}
           onFieldMap={handleFieldMap}
           availableFields={documentFields}
