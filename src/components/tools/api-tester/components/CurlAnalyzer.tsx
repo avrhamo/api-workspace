@@ -47,27 +47,56 @@ interface MappingPanelProps {
   fieldPath: string;
 }
 
+interface MappingInfo {
+  targetField: string;
+  type: 'mongodb' | 'fixed' | 'special';
+  value?: string;
+}
+
+interface JsonTreeProps {
+  data: Record<string, unknown> | unknown[] | string;
+  path?: string;
+  selectedPath?: string;
+  onKeyClick: (path: string, type: string, event: React.MouseEvent) => void;
+  mappings?: Record<string, MappingInfo>;
+}
+
 const ClickableKey: React.FC<{
   fieldKey: string;
   path: string;
   isDisabled?: boolean;
   onKeyClick: (path: string, type: string, event: React.MouseEvent) => void;
-}> = ({ fieldKey, path, isDisabled = false, onKeyClick }) => (
-  <button
-    onClick={(e) => !isDisabled && onKeyClick(path, 'bodyField', e)}
-    className={`
-      font-mono text-sm rounded px-1.5 py-0.5 transition-colors duration-150
-      ${isDisabled 
-        ? 'text-gray-500 dark:text-gray-600 cursor-not-allowed'
-        : 'text-blue-500 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 hover:text-blue-600 dark:hover:text-blue-300'
-      }
-    `}
-    aria-label={`Map field ${fieldKey}`}
-    role="button"
-    tabIndex={isDisabled ? -1 : 0}
-  >
-    {fieldKey}
-  </button>
+  mapping?: MappingInfo;
+}> = ({ fieldKey, path, isDisabled = false, onKeyClick, mapping }) => (
+  <div className="relative group">
+    <button
+      onClick={(e) => !isDisabled && onKeyClick(path, 'bodyField', e)}
+      className={`
+        font-mono text-sm rounded px-1.5 py-0.5 transition-colors duration-150 flex items-center
+        ${isDisabled 
+          ? 'text-gray-500 dark:text-gray-600 cursor-not-allowed'
+          : mapping
+            ? 'text-blue-500 dark:text-blue-400'
+            : 'text-blue-500 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900'
+        }
+      `}
+      aria-label={`Map field ${fieldKey}`}
+      role="button"
+      tabIndex={isDisabled ? -1 : 0}
+    >
+      {fieldKey}
+      {mapping && (
+        <>
+          <div className="ml-2 h-2 w-2 rounded-full bg-green-400"></div>
+          <div className="absolute z-50 bottom-full left-0 mb-1 px-2 py-1 text-xs bg-gray-800 text-white rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+            {mapping.type === 'mongodb' && `Mapped to: ${mapping.targetField}`}
+            {mapping.type === 'fixed' && `Fixed value: ${mapping.value}`}
+            {mapping.type === 'special' && 'Special: UUID'}
+          </div>
+        </>
+      )}
+    </button>
+  </div>
 );
 
 const MappingPanel: React.FC<MappingPanelProps> = ({
@@ -365,97 +394,107 @@ const MappingPanel: React.FC<MappingPanelProps> = ({
   );
 };
 
-const JsonTree: React.FC<{
-  data: Record<string, unknown> | unknown[];
-  path?: string;
-  selectedPath?: string;
-  onKeyClick: (path: string, type: string, event: React.MouseEvent) => void;
-}> = React.memo(({ data, path = '', selectedPath, onKeyClick }) => {
+const JsonTree: React.FC<JsonTreeProps> = React.memo(({ 
+  data, 
+  path = '', 
+  selectedPath, 
+  onKeyClick,
+  mappings = {} 
+}) => {
   const isChildOfSelected = Boolean(selectedPath && path.startsWith(selectedPath + '.'));
   const isSelected = selectedPath === path;
 
   const renderValue = useCallback((value: unknown, key: string, fieldPath: string) => {
     if (value === null) {
       return (
-        <div className="flex items-baseline py-1">
-          <ClickableKey 
-            fieldKey={key} 
-            path={fieldPath}
-            isDisabled={isChildOfSelected}
-            onKeyClick={onKeyClick}
-          />
-          <span className="ml-2 text-gray-400">: null</span>
+        <div className="flex items-baseline">
+          <div className="flex items-baseline py-1">
+            <ClickableKey 
+              fieldKey={key} 
+              path={fieldPath}
+              isDisabled={isChildOfSelected}
+              onKeyClick={onKeyClick}
+              mapping={mappings[fieldPath]}
+            />
+            <span className="ml-2 text-gray-400">: null</span>
+          </div>
         </div>
       );
     }
 
     if (Array.isArray(value)) {
       return (
-        <div className="py-1">
-          <div className="flex items-baseline">
+        <div className="flex flex-col">
+          <div className="flex items-baseline py-1">
             <ClickableKey 
               fieldKey={key} 
               path={fieldPath}
               isDisabled={isChildOfSelected}
               onKeyClick={onKeyClick}
+              mapping={mappings[fieldPath]}
             />
             <span className="ml-2 text-gray-400">: [</span>
           </div>
           <div className="ml-6 border-l-2 border-gray-700 dark:border-gray-600 pl-4">
             {value.map((item, index) => (
-              <div key={index} className="py-0.5">
+              <div key={index} className="flex items-baseline">
                 {renderValue(item, `${index}`, `${fieldPath}[${index}]`)}
                 {index < value.length - 1 && <span className="text-gray-400">,</span>}
               </div>
             ))}
           </div>
-          <span className="text-gray-400">]</span>
+          <div className="flex items-baseline">
+            <span className="text-gray-400">]</span>
+          </div>
         </div>
       );
     }
 
     if (typeof value === 'object' && value !== null) {
       return (
-        <div className="py-1">
-          <div className="flex items-baseline">
+        <div className="flex flex-col">
+          <div className="flex items-baseline py-1">
             <ClickableKey 
               fieldKey={key} 
               path={fieldPath}
               isDisabled={isChildOfSelected}
               onKeyClick={onKeyClick}
+              mapping={mappings[fieldPath]}
             />
             <span className="ml-2 text-gray-400">: {`{`}</span>
           </div>
           <div className="ml-6 border-l-2 border-gray-700 dark:border-gray-600 pl-4">
-            {Object.entries(value as Record<string, unknown>).map(([k, v], index, arr) => {
-              const newPath = fieldPath ? `${fieldPath}.${k}` : k;
-              return (
-                <div key={k} className="py-0.5">
-                  {renderValue(v, k, newPath)}
-                  {index < arr.length - 1 && <span className="text-gray-400">,</span>}
-                </div>
-              );
-            })}
+            {Object.entries(value as Record<string, unknown>).map(([k, v], index, arr) => (
+              <div key={k} className="flex items-baseline">
+                {renderValue(v, k, `${fieldPath}.${k}`)}
+                {index < arr.length - 1 && <span className="text-gray-400">,</span>}
+              </div>
+            ))}
           </div>
-          <span className="text-gray-400">{'}'}</span>
+          <div className="flex items-baseline">
+            <span className="text-gray-400">{'}'}</span>
+          </div>
         </div>
       );
     }
 
     return (
-      <div className="flex items-baseline py-1">
-        <ClickableKey 
-          fieldKey={key} 
-          path={fieldPath}
-          isDisabled={isChildOfSelected}
-          onKeyClick={onKeyClick}
-        />
-        <span className={`ml-2 ${isChildOfSelected ? 'text-gray-500 dark:text-gray-600' : 'text-emerald-500 dark:text-emerald-400'}`}>
-          : {typeof value === 'string' ? `"${value}"` : String(value)}
-        </span>
+      <div className="flex items-baseline">
+        <div className="flex items-baseline py-1">
+          <ClickableKey 
+            fieldKey={key} 
+            path={fieldPath}
+            isDisabled={isChildOfSelected}
+            onKeyClick={onKeyClick}
+            mapping={mappings[fieldPath]}
+          />
+          <span className={`ml-2 ${isChildOfSelected ? 'text-gray-500 dark:text-gray-600' : 'text-emerald-500 dark:text-emerald-400'}`}>
+            : {typeof value === 'string' ? `"${value}"` : String(value)}
+          </span>
+        </div>
       </div>
     );
-  }, [isChildOfSelected, onKeyClick]);
+  }, [isChildOfSelected, onKeyClick, mappings]);
 
   if (typeof data === 'object' && data !== null) {
     return (
@@ -463,7 +502,7 @@ const JsonTree: React.FC<{
         {Object.entries(data as Record<string, unknown>).map(([key, value], index, arr) => {
           const fieldPath = path ? `${path}.${key}` : key;
           return (
-            <div key={key}>
+            <div key={key} className="flex items-baseline">
               {renderValue(value, key, fieldPath)}
               {index < arr.length - 1 && <span className="text-gray-400">,</span>}
             </div>
@@ -492,6 +531,7 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
   });
   const [selectedPath, setSelectedPath] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
+  const [mappings, setMappings] = useState<Record<string, MappingInfo>>({});
 
   useEffect(() => {
     const parseCurlCommand = (curl: string): ParsedCurl => {
@@ -661,10 +701,37 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
     setSelectedPath(undefined);
   }, []);
 
-  const handleFieldSelect = useCallback((selectedField: string, config?: FixedValueConfig | SpecialFieldConfig) => {
-    onFieldMap(panelState.fieldPath, selectedField);
-    handlePanelClose();
-  }, [onFieldMap, panelState.fieldPath, handlePanelClose]);
+  const handleFieldMapping = useCallback((field: string, config?: FixedValueConfig | SpecialFieldConfig) => {
+    let mappingInfo: MappingInfo;
+    
+    if (!config) {
+      // MongoDB field mapping
+      mappingInfo = {
+        targetField: field,
+        type: 'mongodb'
+      };
+    } else if ('type' in config && config.type === 'uuid') {
+      // Special field mapping
+      mappingInfo = {
+        targetField: 'UUID',
+        type: 'special'
+      };
+    } else {
+      // Fixed value mapping
+      mappingInfo = {
+        targetField: 'Fixed Value',
+        type: 'fixed',
+        value: (config as FixedValueConfig).value
+      };
+    }
+
+    setMappings((prev: Record<string, MappingInfo>) => ({
+      ...prev,
+      [panelState.fieldPath]: mappingInfo
+    }));
+    
+    onFieldMap(field, mappingInfo.targetField);
+  }, [panelState.fieldPath, onFieldMap]);
 
   if (error) {
     return (
@@ -681,93 +748,56 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
   if (!parsedCurl) return null;
 
   return (
-    <div className="space-y-6 bg-white dark:bg-gray-900 p-6 rounded-lg shadow" role="region" aria-label="CURL Analysis">
-      {/* URL Section */}
-      <div className="space-y-2">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white">URL</h3>
-        <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-          <div className="flex items-center space-x-2 font-mono text-sm">
-            <span className="text-purple-600 dark:text-purple-400">{parsedCurl.method}</span>
-            <span className="text-gray-600 dark:text-gray-400">{parsedCurl.url.base}</span>
-          </div>
-          
-          {/* Path Parameters */}
-          {Object.entries(parsedCurl.url.pathParams).length > 0 && (
-            <div className="mt-3">
-              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Path Parameters</h4>
-              <div className="space-y-1">
-                {Object.entries(parsedCurl.url.pathParams).map(([key, value]) => (
-                  <div key={key} className="flex items-center space-x-2">
-                    <span className="text-sm text-gray-500 dark:text-gray-400">{key}:</span>
-                    <ClickableKey fieldKey={key} path={`path.${key}`} onKeyClick={handleKeyClick} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Query Parameters */}
-          {Object.entries(parsedCurl.url.queryParams).length > 0 && (
-            <div className="mt-3">
-              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Query Parameters</h4>
-              <div className="space-y-1">
-                {Object.entries(parsedCurl.url.queryParams).map(([key, value]) => (
-                  <div key={key} className="flex items-center space-x-2">
-                    <span className="text-sm text-gray-500 dark:text-gray-400">{key}:</span>
-                    <ClickableKey fieldKey={key} path={`query.${key}`} onKeyClick={handleKeyClick} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Headers Section */}
-      {Object.keys(parsedCurl.headers).length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Headers</h3>
-          <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-            <div className="space-y-2">
-              {Object.entries(parsedCurl.headers).map(([key, value]) => (
-                <div key={key} className="flex items-center space-x-2">
-                  <ClickableKey
-                    fieldKey={key}
-                    path={`header.${key}`}
-                    onKeyClick={handleKeyClick}
-                  />
-                  <span className="text-gray-500 dark:text-gray-400">: {value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+    <div className="space-y-4">
+      {error && (
+        <div className="text-red-500 dark:text-red-400 text-sm">{error}</div>
       )}
-
-      {/* Body Section */}
-      {parsedCurl.body && (
-        <div className="space-y-2">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Body</h3>
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg">
-            <div className="p-4 font-mono text-sm overflow-auto">
-              {typeof parsedCurl.body === 'string' ? (
-                <div>
-                  <div className="text-yellow-500 dark:text-yellow-400 mb-2" role="alert">
-                    Warning: Body content could not be parsed as JSON
-                  </div>
-                  <pre className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-                    {parsedCurl.body}
-                  </pre>
-                </div>
-              ) : (
-                <JsonTree
-                  data={parsedCurl.body as Record<string, unknown>}
-                  onKeyClick={handleKeyClick}
-                  selectedPath={selectedPath}
-                />
-              )}
+      
+      {parsedCurl && (
+        <div className="space-y-6">
+          {/* URL Section */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">URL Parameters</h3>
+            <div className="bg-gray-50 dark:bg-gray-800 rounded-md p-4">
+              <JsonTree
+                data={parsedCurl.url.pathParams}
+                path="url"
+                selectedPath={selectedPath}
+                onKeyClick={handleKeyClick}
+                mappings={mappings}
+              />
             </div>
           </div>
+
+          {/* Headers Section */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Headers</h3>
+            <div className="bg-gray-50 dark:bg-gray-800 rounded-md p-4">
+              <JsonTree
+                data={parsedCurl.headers}
+                path="header"
+                selectedPath={selectedPath}
+                onKeyClick={handleKeyClick}
+                mappings={mappings}
+              />
+            </div>
+          </div>
+
+          {/* Body Section */}
+          {parsedCurl.body && (
+            <div>
+              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Body</h3>
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-md p-4">
+                <JsonTree
+                  data={parsedCurl.body}
+                  path="body"
+                  selectedPath={selectedPath}
+                  onKeyClick={handleKeyClick}
+                  mappings={mappings}
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -776,7 +806,7 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
         initialPosition={panelState.position}
         onClose={handlePanelClose}
         availableFields={availableFields}
-        onSelect={handleFieldSelect}
+        onSelect={handleFieldMapping}
         fieldPath={panelState.fieldPath}
       />
     </div>
