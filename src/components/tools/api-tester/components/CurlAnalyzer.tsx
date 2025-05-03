@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { XMarkIcon, MagnifyingGlassIcon, PlusIcon, MinusIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, MagnifyingGlassIcon, PlusIcon, MinusIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
 
 interface CurlAnalyzerProps {
   curlCommand: string;
@@ -60,6 +60,18 @@ interface JsonTreeProps {
   onKeyClick: (path: string, type: string, event: React.MouseEvent) => void;
   mappings?: Record<string, MappingInfo>;
 }
+
+interface Base64JsonInfo {
+  isBase64Json: true;
+  decodedValue: Record<string, unknown>;
+}
+
+interface NotBase64Json {
+  isBase64Json: false;
+  originalValue: unknown;
+}
+
+type Base64DetectionResult = Base64JsonInfo | NotBase64Json;
 
 const ClickableKey: React.FC<{
   fieldKey: string;
@@ -394,6 +406,36 @@ const MappingPanel: React.FC<MappingPanelProps> = ({
   );
 };
 
+const tryParseBase64Json = (value: unknown): Base64DetectionResult => {
+  if (typeof value !== 'string') {
+    return { isBase64Json: false, originalValue: value };
+  }
+
+  try {
+    // Try to decode base64
+    const decodedString = atob(value);
+    
+    try {
+      // Try to parse as JSON
+      const parsedJson = JSON.parse(decodedString);
+      
+      // Only consider it valid if it's an object or array
+      if (typeof parsedJson === 'object' && parsedJson !== null) {
+        return {
+          isBase64Json: true,
+          decodedValue: parsedJson
+        };
+      }
+    } catch (e) {
+      // JSON parse failed, not a JSON string
+    }
+  } catch (e) {
+    // Base64 decode failed, not a base64 string
+  }
+
+  return { isBase64Json: false, originalValue: value };
+};
+
 const JsonTree: React.FC<JsonTreeProps> = React.memo(({ 
   data, 
   path = '', 
@@ -405,7 +447,43 @@ const JsonTree: React.FC<JsonTreeProps> = React.memo(({
   const isSelected = selectedPath === path;
 
   const renderValue = useCallback((value: unknown, key: string, fieldPath: string) => {
-    if (value === null) {
+    // Try to detect and decode base64 JSON
+    const base64Result = tryParseBase64Json(value);
+    
+    if (base64Result.isBase64Json) {
+      return (
+        <div className="flex flex-col">
+          <div className="flex items-baseline py-1">
+            <ClickableKey 
+              fieldKey={key} 
+              path={fieldPath}
+              isDisabled={isChildOfSelected}
+              onKeyClick={onKeyClick}
+              mapping={mappings[fieldPath]}
+            />
+            <span className="ml-2 text-gray-400">: {`{`}</span>
+            <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 flex items-center">
+              <DocumentTextIcon className="w-3 h-3 mr-1" />
+              base64
+            </span>
+          </div>
+          <div className="ml-6 border-l-2 border-gray-700 dark:border-gray-600 pl-4">
+            {Object.entries(base64Result.decodedValue).map(([k, v], index, arr) => (
+              <div key={k} className="flex items-baseline">
+                {renderValue(v, k, `${fieldPath}.${k}`)}
+                {index < arr.length - 1 && <span className="text-gray-400">,</span>}
+              </div>
+            ))}
+          </div>
+          <div className="flex items-baseline">
+            <span className="text-gray-400">{'}'}</span>
+          </div>
+        </div>
+      );
+    }
+
+    // Continue with the existing renderValue logic for non-base64 values
+    if (base64Result.originalValue === null) {
       return (
         <div className="flex items-baseline">
           <div className="flex items-baseline py-1">
@@ -422,7 +500,8 @@ const JsonTree: React.FC<JsonTreeProps> = React.memo(({
       );
     }
 
-    if (Array.isArray(value)) {
+    if (Array.isArray(base64Result.originalValue)) {
+      const value = base64Result.originalValue;
       return (
         <div className="flex flex-col">
           <div className="flex items-baseline py-1">
@@ -450,7 +529,8 @@ const JsonTree: React.FC<JsonTreeProps> = React.memo(({
       );
     }
 
-    if (typeof value === 'object' && value !== null) {
+    if (typeof base64Result.originalValue === 'object' && base64Result.originalValue !== null) {
+      const value = base64Result.originalValue;
       return (
         <div className="flex flex-col">
           <div className="flex items-baseline py-1">
@@ -489,7 +569,7 @@ const JsonTree: React.FC<JsonTreeProps> = React.memo(({
             mapping={mappings[fieldPath]}
           />
           <span className={`ml-2 ${isChildOfSelected ? 'text-gray-500 dark:text-gray-600' : 'text-emerald-500 dark:text-emerald-400'}`}>
-            : {typeof value === 'string' ? `"${value}"` : String(value)}
+            : {typeof base64Result.originalValue === 'string' ? `"${base64Result.originalValue}"` : String(base64Result.originalValue)}
           </span>
         </div>
       </div>
@@ -517,6 +597,156 @@ const JsonTree: React.FC<JsonTreeProps> = React.memo(({
 
 JsonTree.displayName = 'JsonTree';
 
+const TEST_CURL = `curl --request POST \\
+  'http://localhost:8080/api/test?config=eyJzZXR0aW5ncyI6eyJtb2RlIjoiZGVidWciLCJlbmFibGVkIjp0cnVlfX0=' \\
+  --header 'Content-Type: application/json' \\
+  --header 'X-Metadata: eyJ2ZXJzaW9uIjoiMS4wIiwiZW52IjoiZGV2IiwiZGVidWciOnRydWV9' \\
+  --data '{
+    "user": {
+      "profile": "eyJ1c2VySWQiOjEyMywibmFtZSI6IkpvaG4gRG9lIiwicm9sZXMiOlsiYWRtaW4iLCJ1c2VyIl19",
+      "settings": {
+        "theme": "dark",
+        "notifications": true
+      }
+    },
+    "metadata": "eyJzb3VyY2UiOiJ3ZWIiLCJpcCI6IjEyNy4wLjAuMSIsInRpbWVzdGFtcCI6MTcwOTI5MzYwMH0="
+  }'`;
+
+// Move parseCurlCommand outside of useEffect
+const parseCurlCommand = (curl: string): ParsedCurl => {
+  try {
+    const lines = curl.split('\n').map(line => line.trim());
+    const parsed: ParsedCurl = {
+      method: '',
+      url: {
+        base: '',
+        pathParams: {},
+        queryParams: {}
+      },
+      headers: {},
+      body: null
+    };
+
+    // Parse the first line (URL and method)
+    const firstLine = lines[0];
+    const methodMatch = firstLine.match(/--request\s+(\w+)/);
+    if (methodMatch) {
+      parsed.method = methodMatch[1];
+    } else {
+      parsed.method = 'GET';
+    }
+
+    const urlMatch = firstLine.match(/'([^']+)'/);
+    if (!urlMatch) {
+      throw new Error('Invalid CURL command: URL not found');
+    }
+
+    const url = urlMatch[1];
+    const [basePath, queryString] = url.split('?');
+    
+    // Parse path parameters
+    const pathParts = basePath.split('/');
+    const processedParts: string[] = [];
+    
+    pathParts.forEach(part => {
+      if (part.match(/\{\$P[^}]+\}/)) {
+        const paramName = part.slice(3, -1);
+        parsed.url.pathParams[paramName] = part;
+        processedParts.push(part);
+      } else if (part) {
+        processedParts.push(part);
+      }
+    });
+    
+    parsed.url.base = processedParts.join('/');
+
+    // Parse query parameters
+    if (queryString) {
+      queryString.split('&').forEach(param => {
+        const [key, value] = param.split('=');
+        if (key && value) {
+          parsed.url.queryParams[decodeURIComponent(key)] = decodeURIComponent(value);
+        }
+      });
+    }
+
+    // Parse headers
+    const headerLines = lines.filter(line => line.startsWith('--header'));
+    headerLines.forEach(line => {
+      const headerMatch = line.match(/--header\s+'([^:]+):\s*([^']+)'/);
+      if (headerMatch) {
+        const [_, key, value] = headerMatch;
+        parsed.headers[key] = value;
+      }
+    });
+
+    // Parse body
+    const dataIndex = lines.findIndex(line => 
+      line.includes('--data') || 
+      line.includes('--data-raw') || 
+      line.includes('-d')
+    );
+
+    if (dataIndex !== -1) {
+      let bodyContent = '';
+      let i = dataIndex;
+      const currentLine = lines[i];
+      
+      const bodyStartMatch = currentLine.match(/(?:--data(?:-raw)?|-d)\s+'(.*)$/);
+      
+      if (bodyStartMatch) {
+        bodyContent = bodyStartMatch[1];
+        
+        if (!currentLine.endsWith("'") || currentLine.endsWith("\\'")) {
+          i++;
+          while (i < lines.length) {
+            const line = lines[i];
+            if (line.endsWith("'") && !line.endsWith("\\'")) {
+              bodyContent += '\n' + line.slice(0, -1);
+              break;
+            } else {
+              bodyContent += '\n' + line;
+            }
+            i++;
+          }
+        }
+
+        bodyContent = bodyContent.trim();
+        
+        try {
+          if (bodyContent.startsWith("'") && bodyContent.endsWith("'")) {
+            bodyContent = bodyContent.slice(1, -1);
+          }
+          
+          bodyContent = bodyContent
+            .replace(/\\n/g, '\n')
+            .replace(/\\"/g, '"')
+            .replace(/\\'/g, "'")
+            .replace(/\\\\/g, '\\');
+
+          try {
+            parsed.body = JSON.parse(bodyContent);
+          } catch (firstError) {
+            const cleanContent = bodyContent
+              .replace(/,\s*}/g, '}')
+              .replace(/,\s*\]/g, ']')
+              .replace(/\n\s*/g, '')
+              .trim();
+            
+            parsed.body = JSON.parse(cleanContent);
+          }
+        } catch (error) {
+          parsed.body = bodyContent;
+        }
+      }
+    }
+
+    return parsed;
+  } catch (error) {
+    throw new Error(`Failed to parse CURL command: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+};
+
 export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
   curlCommand,
   onFieldMap,
@@ -534,140 +764,6 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
   const [mappings, setMappings] = useState<Record<string, MappingInfo>>({});
 
   useEffect(() => {
-    const parseCurlCommand = (curl: string): ParsedCurl => {
-      try {
-        const lines = curl.split('\n').map(line => line.trim());
-        const parsed: ParsedCurl = {
-          method: '',
-          url: {
-            base: '',
-            pathParams: {},
-            queryParams: {}
-          },
-          headers: {},
-          body: null
-        };
-
-        // Parse the first line (URL and method)
-        const firstLine = lines[0];
-        const methodMatch = firstLine.match(/--request\s+(\w+)/);
-        if (methodMatch) {
-          parsed.method = methodMatch[1];
-        } else {
-          parsed.method = 'GET';
-        }
-
-        const urlMatch = firstLine.match(/'([^']+)'/);
-        if (!urlMatch) {
-          throw new Error('Invalid CURL command: URL not found');
-        }
-
-        const url = urlMatch[1];
-        const [basePath, queryString] = url.split('?');
-        
-        // Parse path parameters
-        const pathParts = basePath.split('/');
-        const processedParts: string[] = [];
-        
-        pathParts.forEach(part => {
-          if (part.match(/\{\$P[^}]+\}/)) {
-            const paramName = part.slice(3, -1);
-            parsed.url.pathParams[paramName] = part;
-            processedParts.push(part);
-          } else if (part) {
-            processedParts.push(part);
-          }
-        });
-        
-        parsed.url.base = processedParts.join('/');
-
-        // Parse query parameters
-        if (queryString) {
-          queryString.split('&').forEach(param => {
-            const [key, value] = param.split('=');
-            if (key && value) {
-              parsed.url.queryParams[decodeURIComponent(key)] = decodeURIComponent(value);
-            }
-          });
-        }
-
-        // Parse headers
-        const headerLines = lines.filter(line => line.startsWith('--header'));
-        headerLines.forEach(line => {
-          const headerMatch = line.match(/--header\s+'([^:]+):\s*([^']+)'/);
-          if (headerMatch) {
-            const [_, key, value] = headerMatch;
-            parsed.headers[key] = value;
-          }
-        });
-
-        // Parse body
-        const dataIndex = lines.findIndex(line => 
-          line.includes('--data') || 
-          line.includes('--data-raw') || 
-          line.includes('-d')
-        );
-
-        if (dataIndex !== -1) {
-          let bodyContent = '';
-          let i = dataIndex;
-          const currentLine = lines[i];
-          
-          const bodyStartMatch = currentLine.match(/(?:--data(?:-raw)?|-d)\s+'(.*)$/);
-          
-          if (bodyStartMatch) {
-            bodyContent = bodyStartMatch[1];
-            
-            if (!currentLine.endsWith("'") || currentLine.endsWith("\\'")) {
-              i++;
-              while (i < lines.length) {
-                const line = lines[i];
-                if (line.endsWith("'") && !line.endsWith("\\'")) {
-                  bodyContent += '\n' + line.slice(0, -1);
-                  break;
-                } else {
-                  bodyContent += '\n' + line;
-                }
-                i++;
-              }
-            }
-
-            bodyContent = bodyContent.trim();
-            
-            try {
-              if (bodyContent.startsWith("'") && bodyContent.endsWith("'")) {
-                bodyContent = bodyContent.slice(1, -1);
-              }
-              
-              bodyContent = bodyContent
-                .replace(/\\n/g, '\n')
-                .replace(/\\"/g, '"')
-                .replace(/\\'/g, "'")
-                .replace(/\\\\/g, '\\');
-
-              try {
-                parsed.body = JSON.parse(bodyContent);
-              } catch (firstError) {
-                const cleanContent = bodyContent
-                  .replace(/,\s*}/g, '}')
-                  .replace(/,\s*\]/g, ']')
-                  .replace(/\n\s*/g, '')
-                  .trim();
-                
-                parsed.body = JSON.parse(cleanContent);
-              }
-            } catch (error) {
-              parsed.body = bodyContent;
-            }
-          }
-        }
-
-        return parsed;
-      } catch (error) {
-        throw new Error(`Failed to parse CURL command: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-    };
-
     try {
       setParsedCurl(parseCurlCommand(curlCommand));
       setError(null);
@@ -733,6 +829,19 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
     onFieldMap(field, mappingInfo.targetField);
   }, [panelState.fieldPath, onFieldMap]);
 
+  const handleTest = useCallback(() => {
+    setParsedCurl(null);
+    setError(null);
+    setMappings({});
+    // Use the test curl command
+    try {
+      const parsed = parseCurlCommand(TEST_CURL);
+      setParsedCurl(parsed);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to parse CURL command');
+    }
+  }, []);
+
   if (error) {
     return (
       <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4" role="alert">
@@ -749,6 +858,15 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <button
+          onClick={handleTest}
+          className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        >
+          Load Test Data
+        </button>
+      </div>
+
       {error && (
         <div className="text-red-500 dark:text-red-400 text-sm">{error}</div>
       )}

@@ -41,10 +41,34 @@ const mongodb_1 = require("mongodb");
 const path = __importStar(require("path"));
 const node_fetch_1 = __importDefault(require("node-fetch"));
 const crypto_1 = __importDefault(require("crypto"));
+const child_process_1 = require("child_process");
+const util_1 = require("util");
+const fs = __importStar(require("fs"));
 let mainWindow = null;
 let mongoClient = null;
 const activeCursors = new Map();
 const isDev = process.env.NODE_ENV === 'development';
+const execAsync = (0, util_1.promisify)(child_process_1.exec);
+// Encryption key management
+let encryptionKey = null;
+// Load or generate encryption key
+async function loadEncryptionKey() {
+    try {
+        const keyPath = path.join(electron_1.app.getPath('userData'), 'encryption.key');
+        if (fs.existsSync(keyPath)) {
+            encryptionKey = await fs.promises.readFile(keyPath);
+        }
+        else {
+            // Generate new key if none exists
+            encryptionKey = crypto_1.default.randomBytes(32); // 256 bits
+            await fs.promises.writeFile(keyPath, encryptionKey);
+        }
+    }
+    catch (error) {
+        console.error('Failed to load/generate encryption key:', error);
+        throw error;
+    }
+}
 async function createWindow() {
     // Log the preload script path
     const preloadPath = path.join(__dirname, 'preload.js');
@@ -327,8 +351,154 @@ electron_1.ipcMain.handle('api:executeRequest', async (_, config) => {
         };
     }
 });
+// Helm Secrets IPC Handlers
+electron_1.ipcMain.handle('listGpgKeys', async () => {
+    try {
+        const { stdout } = await execAsync('gpg --list-secret-keys --keyid-format LONG');
+        const keys = stdout
+            .split('\n')
+            .filter(line => line.includes('sec'))
+            .map(line => {
+            const match = line.match(/sec\s+\w+\/(\w+)/);
+            return match ? match[1] : null;
+        })
+            .filter(Boolean);
+        return { success: true, keys };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to list GPG keys'
+        };
+    }
+});
+electron_1.ipcMain.handle('helmSecretsEncrypt', async (_, content, _keyId, sopsConfigPath) => {
+    try {
+        // Create a temporary file with the content
+        const tempFile = path.join(electron_1.app.getPath('temp'), `helm-secret-${Date.now()}.yaml`);
+        await fs.promises.writeFile(tempFile, content);
+        // Prepare environment
+        const env = { ...process.env };
+        if (sopsConfigPath && sopsConfigPath.trim()) {
+            env.SOPS_CONFIG = sopsConfigPath.trim();
+        }
+        // Run helm secrets encrypt (no --key flag)
+        const { stdout } = await execAsync(`helm secrets encrypt ${tempFile}`, { env });
+        // Clean up the temporary file
+        await fs.promises.unlink(tempFile);
+        return { success: true, encrypted: stdout };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to encrypt Helm secret'
+        };
+    }
+});
+electron_1.ipcMain.handle('helmSecretsDecrypt', async (_, content, sopsConfigPath) => {
+    try {
+        // Create a temporary file with the content
+        const tempFile = path.join(electron_1.app.getPath('temp'), `helm-secret-${Date.now()}.yaml`);
+        await fs.promises.writeFile(tempFile, content);
+        // Prepare environment
+        const env = { ...process.env };
+        if (sopsConfigPath && sopsConfigPath.trim()) {
+            env.SOPS_CONFIG = sopsConfigPath.trim();
+        }
+        // Run helm secrets decrypt
+        const { stdout } = await execAsync(`helm secrets decrypt ${tempFile}`, { env });
+        // Clean up the temporary file
+        await fs.promises.unlink(tempFile);
+        return { success: true, decrypted: stdout };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to decrypt Helm secret'
+        };
+    }
+});
+// Encryption IPC Handlers
+electron_1.ipcMain.handle('generateEncryptionKey', async () => {
+    try {
+        encryptionKey = crypto_1.default.randomBytes(32);
+        const keyPath = path.join(electron_1.app.getPath('userData'), 'encryption.key');
+        await fs.promises.writeFile(keyPath, encryptionKey);
+        return { success: true };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to generate encryption key'
+        };
+    }
+});
+electron_1.ipcMain.handle('encryptSecret', async (_, content) => {
+    try {
+        if (!encryptionKey) {
+            throw new Error('Encryption key not initialized');
+        }
+        // Generate a random IV
+        const iv = crypto_1.default.randomBytes(16);
+        // Create cipher
+        const cipher = crypto_1.default.createCipheriv('aes-256-cbc', encryptionKey, iv);
+        // Encrypt the content
+        let encrypted = cipher.update(content, 'utf8', 'base64');
+        encrypted += cipher.final('base64');
+        // Combine IV and encrypted content
+        const result = {
+            iv: iv.toString('base64'),
+            content: encrypted
+        };
+        // Format as YAML
+        const yamlOutput = `# This is an encrypted secret
+# DO NOT EDIT THIS FILE MANUALLY
+# Generated: ${new Date().toISOString()}
+
+encrypted: |
+  ${JSON.stringify(result)}
+`;
+        return { success: true, encrypted: yamlOutput };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to encrypt secret'
+        };
+    }
+});
+electron_1.ipcMain.handle('decryptSecret', async (_, content) => {
+    try {
+        if (!encryptionKey) {
+            throw new Error('Encryption key not initialized');
+        }
+        // Parse the YAML content
+        const lines = content.split('\n');
+        const encryptedLine = lines.find(line => line.trim().startsWith('encrypted:'));
+        if (!encryptedLine) {
+            throw new Error('Invalid encrypted content format');
+        }
+        // Extract the encrypted data
+        const encryptedData = JSON.parse(encryptedLine.split('|')[1].trim());
+        // Create decipher
+        const decipher = crypto_1.default.createDecipheriv('aes-256-cbc', encryptionKey, Buffer.from(encryptedData.iv, 'base64'));
+        // Decrypt the content
+        let decrypted = decipher.update(encryptedData.content, 'base64', 'utf8');
+        decrypted += decipher.final('utf8');
+        return { success: true, decrypted };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to decrypt secret'
+        };
+    }
+});
 // App lifecycle handlers
-electron_1.app.whenReady().then(createWindow);
+electron_1.app.whenReady().then(async () => {
+    await loadEncryptionKey();
+    createWindow();
+});
 electron_1.app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         electron_1.app.quit();

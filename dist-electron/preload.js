@@ -26,6 +26,14 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     // New method
     findOne: (database, collection) => {
         return electron_1.ipcRenderer.invoke('mongodb:findOne', database, collection);
-    }
+    },
+    // Helm Secrets
+    listGpgKeys: () => electron_1.ipcRenderer.invoke('listGpgKeys'),
+    helmSecretsEncrypt: (content, keyId, sopsConfigPath) => electron_1.ipcRenderer.invoke('helmSecretsEncrypt', content, keyId, sopsConfigPath),
+    helmSecretsDecrypt: (content, sopsConfigPath) => electron_1.ipcRenderer.invoke('helmSecretsDecrypt', content, sopsConfigPath),
+    // Encryption API
+    generateEncryptionKey: () => electron_1.ipcRenderer.invoke('generateEncryptionKey'),
+    encryptSecret: (content) => electron_1.ipcRenderer.invoke('encryptSecret', content),
+    decryptSecret: (content) => electron_1.ipcRenderer.invoke('decryptSecret', content),
 });
 //# sourceMappingURL=preload.js.map

@@ -7,6 +7,7 @@ import KafkaTester from './components/tools/kafka-tester';
 import RegexTool from './components/tools/regex';
 import TimeUnitsTool from './components/tools/time-units';
 import BSONTool from './components/tools/bson';
+import HelmSecrets from './components/tools/helm-secrets';
 import { useTheme } from './hooks/useTheme';
 
 function App() {
@@ -30,6 +31,8 @@ function App() {
         return <TimeUnitsTool />;
       case 'bson':
         return <BSONTool />;
+      case 'helm-secrets':
+        return <HelmSecrets />;
       default:
         return (
           <div className="h-full flex items-center justify-center">

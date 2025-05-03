@@ -45,6 +45,18 @@ contextBridge.exposeInMainWorld(
     // New method
     findOne: (database: string, collection: string) => {
       return ipcRenderer.invoke('mongodb:findOne', database, collection);
-    }
+    },
+
+    // Helm Secrets
+    listGpgKeys: () => ipcRenderer.invoke('listGpgKeys'),
+    helmSecretsEncrypt: (content: string, keyId: string, sopsConfigPath?: string) => 
+      ipcRenderer.invoke('helmSecretsEncrypt', content, keyId, sopsConfigPath),
+    helmSecretsDecrypt: (content: string, sopsConfigPath?: string) => 
+      ipcRenderer.invoke('helmSecretsDecrypt', content, sopsConfigPath),
+
+    // Encryption API
+    generateEncryptionKey: () => ipcRenderer.invoke('generateEncryptionKey'),
+    encryptSecret: (content: string) => ipcRenderer.invoke('encryptSecret', content),
+    decryptSecret: (content: string) => ipcRenderer.invoke('decryptSecret', content),
   }
 );

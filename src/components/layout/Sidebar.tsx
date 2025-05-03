@@ -9,6 +9,7 @@ import {
   CloudIcon,
   CubeTransparentIcon,
   XMarkIcon,
+  ShieldCheckIcon,
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../../hooks/useTheme';
 
@@ -31,6 +32,7 @@ const Sidebar: FC<SidebarProps> = ({ isOpen, setIsOpen, currentTool, setCurrentT
     { id: 'regex', name: 'Regex', icon: DocumentTextIcon },
     { id: 'time', name: 'Time Units', icon: ClockIcon },
     { id: 'bson', name: 'BSON Tools', icon: CubeTransparentIcon },
+    { id: 'helm-secrets', name: 'Helm Secrets', icon: ShieldCheckIcon },
   ];
 
   return (
