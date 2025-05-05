@@ -99,6 +99,36 @@ async function createWindow() {
         await mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
     }
 }
+// Helper function to deeply convert ObjectId fields to strings
+function convertObjectIds(obj) {
+    if (Array.isArray(obj)) {
+        return obj.map(convertObjectIds);
+    }
+    else if (obj && typeof obj === 'object') {
+        // Handle native ObjectId
+        if (obj._bsontype === 'ObjectID' && typeof obj.toString === 'function') {
+            return obj.toString();
+        }
+        // Handle buffer-like ObjectId (from serialization)
+        if (obj.buffer && Object.keys(obj.buffer).length === 12) {
+            try {
+                // Try to reconstruct ObjectId from buffer if needed
+                const { ObjectId } = require('mongodb');
+                return new ObjectId(Buffer.from(Object.values(obj.buffer))).toString();
+            }
+            catch {
+                // Fallback: return as is
+                return obj;
+            }
+        }
+        const newObj = {};
+        for (const key in obj) {
+            newObj[key] = convertObjectIds(obj[key]);
+        }
+        return newObj;
+    }
+    return obj;
+}
 // MongoDB IPC Handlers
 electron_1.ipcMain.handle('mongodb:connect', async (_, connectionString) => {
     try {
@@ -117,7 +147,8 @@ electron_1.ipcMain.handle('mongodb:findOne', async (_, database, collection) => 
         const db = mongoClient.db(database);
         const col = db.collection(collection);
         const document = await col.findOne({});
-        return { success: true, document };
+        const cleanDoc = convertObjectIds(document);
+        return { success: true, document: cleanDoc };
     }
     catch (error) {
         return { success: false, error: error instanceof Error ? error.message : 'Unknown error occurred' };

@@ -68,16 +68,42 @@ export const ApiTester: React.FC = () => {
   };
 
   // Helper function to extract fields from document
-  const extractDocumentFields = (doc: any, prefix = ''): string[] => {
-    if (!doc) return [];
+  const extractDocumentFields = (doc: any): string[] => {
+    const fields: string[] = [];
     
-    return Object.entries(doc).flatMap(([key, value]) => {
-      const fullPath = prefix ? `${prefix}.${key}` : key;
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        return extractDocumentFields(value, fullPath);
+    const processValue = (value: any, path: string = '') => {
+      if (value === null || value === undefined) {
+        return;
       }
-      return [fullPath];
-    });
+
+      // Handle ObjectId
+      if (value && typeof value === 'object' && value._bsontype === 'ObjectID') {
+        fields.push(path ? `${path}.toString()` : 'toString()');
+        return;
+      }
+
+      // Handle Buffer
+      if (value && typeof value === 'object' && value.buffer) {
+        fields.push(path ? `${path}.toString()` : 'toString()');
+        return;
+      }
+
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => {
+          processValue(item, path ? `${path}[${index}]` : `[${index}]`);
+        });
+      } else if (typeof value === 'object') {
+        Object.entries(value).forEach(([key, val]) => {
+          const newPath = path ? `${path}.${key}` : key;
+          processValue(val, newPath);
+        });
+      } else {
+        fields.push(path);
+      }
+    };
+
+    processValue(doc);
+    return fields;
   };
 
   const steps = [

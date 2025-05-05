@@ -1,0 +1,159 @@
+{
+    "info": {
+      "name": "User API Tester",
+      "description": "Comprehensive test collection for User API endpoints.",
+      "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+      {
+        "name": "Get All Users",
+        "request": {
+          "method": "GET",
+          "header": [],
+          "url": {
+            "raw": "http://localhost:8080/api/users",
+            "protocol": "http",
+            "host": ["localhost"],
+            "port": "8080",
+            "path": ["api", "users"]
+          }
+        }
+      },
+      {
+        "name": "Get User by ID",
+        "request": {
+          "method": "GET",
+          "header": [
+            { "key": "Authorization", "value": "Bearer token", "type": "text" }
+          ],
+          "url": {
+            "raw": "http://localhost:8080/api/users/byId/66b1c67a98fe9b72ab2eeda8",
+            "protocol": "http",
+            "host": ["localhost"],
+            "port": "8080",
+            "path": ["api", "users", "byId", "66b1c67a98fe9b72ab2eeda8"]
+          }
+        }
+      },
+      {
+        "name": "Get User by Phone",
+        "request": {
+          "method": "GET",
+          "header": [
+            {
+              "key": "encodedHeader",
+              "value": "dGVzdC1oZWFkZXI=",
+              "type": "text"
+            }
+          ],
+          "url": {
+            "raw": "http://localhost:8080/api/users/dummy?phone=1-796-224-5741",
+            "protocol": "http",
+            "host": ["localhost"],
+            "port": "8080",
+            "path": ["api", "users", "dummy"],
+            "query": [
+              { "key": "phone", "value": "1-796-224-5741" }
+            ]
+          }
+        }
+      },
+      {
+        "name": "Create User",
+        "request": {
+          "method": "POST",
+          "header": [
+            { "key": "Content-Type", "value": "application/json", "type": "text" }
+          ],
+          "url": {
+            "raw": "http://localhost:8080/api/users/myCategory?source=api",
+            "protocol": "http",
+            "host": ["localhost"],
+            "port": "8080",
+            "path": ["api", "users", "myCategory"],
+            "query": [
+              { "key": "source", "value": "api" }
+            ]
+          },
+          "body": {
+            "mode": "raw",
+            "raw": "{\n  \"name\": { \"first\": \"William\", \"last\": \"Johnson\", \"full\": \"William Johnson\" },\n  \"email\": \"william.johnson@example.com\",\n  \"phone\": \"1-796-224-5741\",\n  \"birthdate\": \"2004-08-07\",\n  \"address\": {\n    \"street\": \"2798 Oak St\",\n    \"city\": \"Chicago\",\n    \"state\": \"CA\",\n    \"zip\": \"24796\",\n    \"coordinates\": { \"latitude\": 32.379439, \"longitude\": -105.487456 }\n  },\n  \"job\": {\n    \"title\": \"Accountant\",\n    \"company\": \"Culinary Creations\",\n    \"work_history\": [\n      {\n        \"company\": \"Capture Moments\",\n        \"position\": \"Data Analyst\",\n        \"duration\": \"3 years\",\n        \"achievements\": [\n          \"Increased productivity by 14%\",\n          \"Led a team of 4 people\",\n          \"Implemented 5 new processes\"\n        ]\n      }\n    ]\n  },\n  \"education\": {\n    \"degree\": \"Bachelor's\",\n    \"field\": \"Business\",\n    \"university\": \"State University\",\n    \"graduation_year\": 2009\n  },\n  \"hobbies\": [\"music\", \"reading\", \"painting\", \"yoga\", \"cycling\"],\n  \"pets\": [],\n  \"social_media\": {\n    \"LinkedIn\": {\n      \"username\": \"williamjohnson636\",\n      \"followers\": 4532,\n      \"posts\": 64\n    }\n  },\n  \"financial\": {\n    \"income\": 129605,\n    \"savings\": 24174,\n    \"investments\": [\n      { \"type\": \"real estate\", \"amount\": 13541 }\n    ]\n  },\n  \"preferences\": {\n    \"favorite_color\": \"green\",\n    \"favorite_food\": \"tacos\",\n    \"favorite_movie_genre\": \"comedy\"\n  },\n  \"metadata\": {\n    \"created_at\": \"2024-08-06T09:43:38.866972\",\n    \"last_updated\": \"2024-08-06T09:43:38.866974\",\n    \"version\": \"1.0\"\n  }\n}"
+          }
+        }
+      },
+      {
+        "name": "Update User (PUT)",
+        "request": {
+          "method": "PUT",
+          "header": [
+            { "key": "Content-Type", "value": "application/json", "type": "text" }
+          ],
+          "url": {
+            "raw": "http://localhost:8080/api/users/byId/66b1c67a98fe9b72ab2eeda8",
+            "protocol": "http",
+            "host": ["localhost"],
+            "port": "8080",
+            "path": ["api", "users", "byId", "66b1c67a98fe9b72ab2eeda8"]
+          },
+          "body": {
+            "mode": "raw",
+            "raw": "{\n  \"name\": { \"first\": \"William\", \"last\": \"Johnson\", \"full\": \"William Johnson\" },\n  \"email\": \"william.johnson@example.com\",\n  \"phone\": \"1-796-224-5741\",\n  \"birthdate\": \"2004-08-07\",\n  \"address\": {\n    \"street\": \"2798 Oak St\",\n    \"city\": \"Chicago\",\n    \"state\": \"CA\",\n    \"zip\": \"24796\",\n    \"coordinates\": { \"latitude\": 32.379439, \"longitude\": -105.487456 }\n  },\n  \"job\": {\n    \"title\": \"Accountant\",\n    \"company\": \"Culinary Creations\",\n    \"work_history\": [\n      {\n        \"company\": \"Capture Moments\",\n        \"position\": \"Data Analyst\",\n        \"duration\": \"3 years\",\n        \"achievements\": [\n          \"Increased productivity by 14%\",\n          \"Led a team of 4 people\",\n          \"Implemented 5 new processes\"\n        ]\n      }\n    ]\n  },\n  \"education\": {\n    \"degree\": \"Bachelor's\",\n    \"field\": \"Business\",\n    \"university\": \"State University\",\n    \"graduation_year\": 2009\n  },\n  \"hobbies\": [\"music\", \"reading\", \"painting\", \"yoga\", \"cycling\"],\n  \"pets\": [],\n  \"social_media\": {\n    \"LinkedIn\": {\n      \"username\": \"williamjohnson636\",\n      \"followers\": 4532,\n      \"posts\": 64\n    }\n  },\n  \"financial\": {\n    \"income\": 129605,\n    \"savings\": 24174,\n    \"investments\": [\n      { \"type\": \"real estate\", \"amount\": 13541 }\n    ]\n  },\n  \"preferences\": {\n    \"favorite_color\": \"green\",\n    \"favorite_food\": \"tacos\",\n    \"favorite_movie_genre\": \"comedy\"\n  },\n  \"metadata\": {\n    \"created_at\": \"2024-08-06T09:43:38.866972\",\n    \"last_updated\": \"2024-08-06T09:43:38.866974\",\n    \"version\": \"1.0\"\n  }\n}"
+          }
+        }
+      },
+      {
+        "name": "Patch User",
+        "request": {
+          "method": "PATCH",
+          "header": [
+            { "key": "Content-Type", "value": "application/json", "type": "text" }
+          ],
+          "url": {
+            "raw": "http://localhost:8080/api/users/byId/66b1c67a98fe9b72ab2eeda8",
+            "protocol": "http",
+            "host": ["localhost"],
+            "port": "8080",
+            "path": ["api", "users", "byId", "66b1c67a98fe9b72ab2eeda8"]
+          },
+          "body": {
+            "mode": "raw",
+            "raw": "{\n  \"phone\": \"111222333\",\n  \"email\": \"new.email@example.com\"\n}"
+          }
+        }
+      },
+      {
+        "name": "Delete User",
+        "request": {
+          "method": "DELETE",
+          "header": [],
+          "url": {
+            "raw": "http://localhost:8080/api/users/byId/66b1c67a98fe9b72ab2eeda8",
+            "protocol": "http",
+            "host": ["localhost"],
+            "port": "8080",
+            "path": ["api", "users", "byId", "66b1c67a98fe9b72ab2eeda8"]
+          }
+        }
+      },
+      {
+        "name": "Bulk Create Users",
+        "request": {
+          "method": "POST",
+          "header": [
+            { "key": "Content-Type", "value": "application/json", "type": "text" }
+          ],
+          "url": {
+            "raw": "http://localhost:8080/api/users/bulk",
+            "protocol": "http",
+            "host": ["localhost"],
+            "port": "8080",
+            "path": ["api", "users", "bulk"]
+          },
+          "body": {
+            "mode": "raw",
+            "raw": "[\n  {\n    \"name\": { \"first\": \"William\", \"last\": \"Johnson\", \"full\": \"William Johnson\" },\n    \"email\": \"william.johnson@example.com\",\n    \"phone\": \"1-796-224-5741\"\n  },\n  {\n    \"name\": { \"first\": \"Jane\", \"last\": \"Smith\", \"full\": \"Jane Smith\" },\n    \"email\": \"jane.smith@example.com\",\n    \"phone\": \"2-123-456-7890\"\n  }\n]"
+          }
+        }
+      }
+    ]
+  }

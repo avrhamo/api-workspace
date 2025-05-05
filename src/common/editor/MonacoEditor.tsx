@@ -8,6 +8,7 @@ interface MonacoEditorProps {
   theme?: string;
   height?: string;
   options?: any;
+  onMount?: (editor: any) => void;
 }
 
 export const MonacoEditor: React.FC<MonacoEditorProps> = ({
@@ -16,13 +17,14 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
   language = 'javascript',
   theme = 'vs-dark',
   height = '100%',
-  options = {}
+  options = {},
+  onMount
 }) => {
   return (
     <Editor
       height={height}
       defaultLanguage={language}
-      defaultValue={value}
+      value={value}
       theme={theme}
       onChange={onChange}
       options={{
@@ -32,6 +34,7 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
         wordWrap: 'on',
         ...options
       }}
+      onMount={onMount}
     />
   );
 }; 

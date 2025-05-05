@@ -873,13 +873,44 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
       
       {parsedCurl && (
         <div className="space-y-6">
-          {/* URL Section */}
+          {/* Base URL Section */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Base URL</h3>
+            <div className="bg-gray-50 dark:bg-gray-800 rounded-md p-4">
+              <div className="flex items-center space-x-2">
+                <ClickableKey
+                  fieldKey="base"
+                  path="url.base"
+                  onKeyClick={handleKeyClick}
+                  mapping={mappings['url.base']}
+                />
+                <span className="text-gray-700 dark:text-gray-300">:</span>
+                <span className="text-gray-600 dark:text-gray-400 font-mono">{parsedCurl.url.base}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* URL Parameters Section */}
           <div>
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">URL Parameters</h3>
             <div className="bg-gray-50 dark:bg-gray-800 rounded-md p-4">
               <JsonTree
                 data={parsedCurl.url.pathParams}
-                path="url"
+                path="url.pathParams"
+                selectedPath={selectedPath}
+                onKeyClick={handleKeyClick}
+                mappings={mappings}
+              />
+            </div>
+          </div>
+
+          {/* Query Parameters Section */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Query Parameters</h3>
+            <div className="bg-gray-50 dark:bg-gray-800 rounded-md p-4">
+              <JsonTree
+                data={parsedCurl.url.queryParams}
+                path="url.queryParams"
                 selectedPath={selectedPath}
                 onKeyClick={handleKeyClick}
                 mappings={mappings}
