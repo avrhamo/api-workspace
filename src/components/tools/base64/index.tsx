@@ -1,183 +1,185 @@
-import { FC, useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import CodeEditor from '../../common/editor/MonacoEditor';
-import { useTheme } from '../../../hooks/useTheme';
-import { DocumentDuplicateIcon } from '@heroicons/react/24/outline';
+import { DocumentDuplicateIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
-const Base64Tool: FC = () => {
-  const { isDark } = useTheme();
-  const [input, setInput] = useState('');
-  const [encodedOutput, setEncodedOutput] = useState('');
-  const [decodedOutput, setDecodedOutput] = useState('');
-  const [isValidJson, setIsValidJson] = useState(true);
+const MODES = [
+  { id: 'encode', label: 'Encode' },
+  { id: 'decode', label: 'Decode' },
+];
 
-  // Encode the input text to Base64
-  const handleEncode = useCallback((value: string | undefined) => {
-    const text = value || '';
-    setInput(text);
+interface Base64State {
+  mode: 'encode' | 'decode';
+  input: string;
+  output: string;
+  error: string | null;
+  copied: 'input' | 'output' | null;
+  editorState?: {
+    scrollTop?: number;
+    scrollLeft?: number;
+    cursorPosition?: { lineNumber: number; column: number };
+    selections?: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }[];
+  };
+}
+
+const Base64Tool: React.FC<{ state?: Base64State; setState?: (state: Partial<Base64State>) => void }> = ({ state: propState, setState: propSetState }) => {
+  const [localState, setLocalState] = useState<Base64State>(() => ({
+    mode: 'encode',
+    input: '',
+    output: '',
+    error: null,
+    copied: null,
+    editorState: undefined,
+    ...propState
+  }));
+
+  // Use prop state if provided, otherwise use local state
+  const state = propState || localState;
+  const setState = propSetState || setLocalState;
+
+  // Handle input changes
+  const handleInputChange = useCallback((value: string | undefined) => {
+    const input = value || '';
+    const newState = { ...state, input, error: null as string | null };
     try {
-      const encoded = btoa(text);
-      setEncodedOutput(encoded);
-      setDecodedOutput(''); // Clear decoded output when encoding
-    } catch (e) {
-      setEncodedOutput('Invalid input for Base64 encoding');
-    }
-  }, []);
-
-  // Decode Base64 to text
-  const handleDecode = useCallback((value: string | undefined) => {
-    const base64 = value || '';
-    setInput(base64);
-    try {
-      const decoded = atob(base64);
-      setDecodedOutput(decoded);
-      setEncodedOutput(''); // Clear encoded output when decoding
-      
-      // Check if decoded string is valid JSON
-      try {
-        JSON.parse(decoded);
-        setIsValidJson(true);
-      } catch (e) {
-        setIsValidJson(false);
-      }
-    } catch (e) {
-      setDecodedOutput('Invalid Base64 string');
-    }
-  }, []);
-
-  const prettifyJson = useCallback(() => {
-    try {
-      // Try to prettify either the input or decoded output
-      const textToPrettify = decodedOutput || input;
-      const parsed = JSON.parse(textToPrettify);
-      const prettified = JSON.stringify(parsed, null, 2);
-      
-      if (decodedOutput) {
-        setDecodedOutput(prettified);
+      if (state.mode === 'encode') {
+        newState.output = btoa(input);
       } else {
-        setInput(prettified);
+        newState.output = atob(input);
       }
-      setIsValidJson(true);
     } catch (e) {
-      setIsValidJson(false);
+      newState.output = '';
+      newState.error = state.mode === 'encode' 
+        ? 'Input cannot be encoded as Base64.' as string | null
+        : 'Invalid Base64 string.' as string | null;
     }
-  }, [input, decodedOutput]);
+    setState(newState);
+  }, [state, setState]);
 
-  const copyToClipboard = useCallback(async (text: string) => {
+  // Handle mode changes
+  const handleModeChange = useCallback((mode: 'encode' | 'decode') => {
+    const newState = { ...state, mode, error: null as string | null };
     try {
-      await navigator.clipboard.writeText(text);
-      // You might want to add a toast notification here
+      if (mode === 'encode') {
+        newState.output = btoa(state.input);
+      } else {
+        newState.output = atob(state.input);
+      }
     } catch (e) {
-      console.error('Failed to copy to clipboard:', e);
+      newState.output = '';
+      newState.error = mode === 'encode' 
+        ? 'Input cannot be encoded as Base64.' as string | null
+        : 'Invalid Base64 string.' as string | null;
     }
-  }, []);
+    setState(newState);
+  }, [state, setState]);
+
+  // Copy helpers
+  const copyToClipboard = (text: string, which: 'input' | 'output') => {
+    navigator.clipboard.writeText(text);
+    setState(prev => ({ ...prev, copied: which }));
+    setTimeout(() => setState(prev => ({ ...prev, copied: null })), 1200);
+  };
+
+  // Reset
+  const handleReset = () => {
+    setState({
+      mode: 'encode',
+      input: '',
+      output: '',
+      error: null,
+      copied: null,
+      editorState: undefined
+    });
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-semibold text-gray-800 dark:text-white">
-          Base64 Encoder/Decoder
-        </h2>
-        <button
-          onClick={prettifyJson}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors
-            ${isValidJson 
-              ? 'bg-blue-500 hover:bg-blue-600 text-white'
-              : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-            }`}
-          disabled={!isValidJson}
-        >
-          Prettify JSON
-        </button>
+    <div className="h-full flex flex-col p-4">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-2xl font-semibold">Base64 Tool</h2>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={handleReset}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-gray-900"
+          >
+            <ArrowPathIcon className="w-4 h-4 mr-2" />
+            Reset
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
-        {/* Input Area */}
-        <div className="space-y-2">
-          <div className="flex justify-between items-center">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Input Text or Base64 String
-            </label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleEncode(input)}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
-              >
-                Encode
-              </button>
-              <button
-                onClick={() => handleDecode(input)}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-green-500 hover:bg-green-600 text-white transition-colors"
-              >
-                Decode
-              </button>
-              <button
-                onClick={() => copyToClipboard(input)}
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                title="Copy to clipboard"
-              >
-                <DocumentDuplicateIcon className="w-5 h-5" />
-              </button>
-            </div>
+      <div className="flex space-x-4 mb-4">
+        {MODES.map(({ id, label }) => (
+          <button
+            key={id}
+            onClick={() => handleModeChange(id as 'encode' | 'decode')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors
+              ${state.mode === id
+                ? 'bg-blue-500 text-white'
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'
+              }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
+        <div className="flex flex-col">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Input</label>
+            <button
+              onClick={() => copyToClipboard(state.input, 'input')}
+              className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 focus:outline-none"
+              title="Copy to clipboard"
+            >
+              <DocumentDuplicateIcon className="w-5 h-5" />
+            </button>
           </div>
-          <CodeEditor
-            value={input}
-            onChange={(value) => setInput(value || '')}
-            language="plaintext"
-            theme={isDark ? 'vs-dark' : 'light'}
-            height="200px"
-          />
+          <div className="flex-1 min-h-0 border rounded-lg overflow-hidden border-gray-200 dark:border-gray-700">
+            <CodeEditor
+              value={state.input}
+              onChange={handleInputChange}
+              language="plaintext"
+              theme="vs-dark"
+              editorState={state.editorState}
+              onEditorStateChange={editorState => setState(prev => ({ ...prev, editorState }))}
+            />
+          </div>
         </div>
 
-        {/* Encoded Output */}
-        {encodedOutput && (
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Encoded Base64 Output
-              </label>
-              <button
-                onClick={() => copyToClipboard(encodedOutput)}
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                title="Copy to clipboard"
-              >
-                <DocumentDuplicateIcon className="w-5 h-5" />
-              </button>
-            </div>
+        <div className="flex flex-col">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Output</label>
+            <button
+              onClick={() => copyToClipboard(state.output, 'output')}
+              className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 focus:outline-none"
+              title="Copy to clipboard"
+            >
+              <DocumentDuplicateIcon className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="flex-1 min-h-0 border rounded-lg overflow-hidden border-gray-200 dark:border-gray-700">
             <CodeEditor
-              value={encodedOutput}
+              value={state.output}
               language="plaintext"
-              theme={isDark ? 'vs-dark' : 'light'}
-              height="200px"
+              theme="vs-dark"
               readOnly
             />
           </div>
-        )}
-
-        {/* Decoded Output */}
-        {decodedOutput && (
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Decoded Output
-              </label>
-              <button
-                onClick={() => copyToClipboard(decodedOutput)}
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                title="Copy to clipboard"
-              >
-                <DocumentDuplicateIcon className="w-5 h-5" />
-              </button>
-            </div>
-            <CodeEditor
-              value={decodedOutput}
-              language="json"
-              theme={isDark ? 'vs-dark' : 'light'}
-              height="200px"
-              readOnly
-            />
-          </div>
-        )}
+        </div>
       </div>
+
+      {state.error && (
+        <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg">
+          <p className="text-sm text-red-700 dark:text-red-200">{state.error}</p>
+        </div>
+      )}
+
+      {state.copied && (
+        <div className="fixed bottom-4 right-4 px-4 py-2 bg-gray-800 text-white rounded-lg shadow-lg">
+          Copied to clipboard!
+        </div>
+      )}
     </div>
   );
 };

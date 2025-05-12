@@ -29,10 +29,10 @@ interface TestExecutorProps {
   connectionConfig: ConnectionConfig;
   curlConfig: CurlConfig;
   testConfig: TestConfig;
-  onConfigChange: React.Dispatch<React.SetStateAction<TestConfig>>;
-  onBack?: () => void;
+  onConfigChange: (config: TestConfig) => void;
   onConnectionConfigChange: (config: ConnectionConfig) => void;
   onCurlConfigChange: (config: CurlConfig) => void;
+  onBack: () => void;
 }
 
 interface TestResult {
@@ -46,20 +46,34 @@ export const TestExecutor: React.FC<TestExecutorProps> = ({
   curlConfig,
   testConfig,
   onConfigChange,
-  onBack,
   onConnectionConfigChange,
-  onCurlConfigChange
+  onCurlConfigChange,
+  onBack
 }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [results, setResults] = useState<TestResult[]>([]);
   const [averageTime, setAverageTime] = useState<number | null>(null);
   const { theme } = useTheme();
 
-  const handleConfigChange = (field: keyof TestConfig, value: any) => {
-    onConfigChange(prev => ({
-      ...prev,
-      [field]: value
-    }));
+  const handleConfigChange = (updates: Partial<TestConfig>) => {
+    onConfigChange({
+      ...testConfig,
+      ...updates
+    });
+  };
+
+  const handleConnectionConfigChange = (updates: Partial<ConnectionConfig>) => {
+    onConnectionConfigChange({
+      ...connectionConfig,
+      ...updates
+    });
+  };
+
+  const handleCurlConfigChange = (updates: Partial<CurlConfig>) => {
+    onCurlConfigChange({
+      ...curlConfig,
+      ...updates
+    });
   };
 
   const executeTest = async () => {
@@ -170,7 +184,7 @@ export const TestExecutor: React.FC<TestExecutorProps> = ({
               type="number"
               min="1"
               value={testConfig.numberOfRequests}
-              onChange={(e) => handleConfigChange('numberOfRequests', parseInt(e.target.value, 10))}
+              onChange={(e) => handleConfigChange({ numberOfRequests: parseInt(e.target.value, 10) })}
               placeholder="Enter number of requests"
               className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white sm:text-sm transition-colors"
               aria-label="Number of requests to execute"
@@ -191,7 +205,7 @@ export const TestExecutor: React.FC<TestExecutorProps> = ({
               type="number"
               min="1"
               value={testConfig.batchSize}
-              onChange={(e) => handleConfigChange('batchSize', parseInt(e.target.value, 10))}
+              onChange={(e) => handleConfigChange({ batchSize: parseInt(e.target.value, 10) })}
               placeholder="Enter batch size"
               className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white sm:text-sm transition-colors"
               aria-label="Batch size for request processing"
@@ -204,7 +218,7 @@ export const TestExecutor: React.FC<TestExecutorProps> = ({
             type="checkbox"
             id="async"
             checked={testConfig.isAsync}
-            onChange={(e) => handleConfigChange('isAsync', e.target.checked)}
+            onChange={(e) => handleConfigChange({ isAsync: e.target.checked })}
             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded transition-colors"
           />
           <label htmlFor="async" className="flex items-center text-sm text-gray-700 dark:text-gray-300">

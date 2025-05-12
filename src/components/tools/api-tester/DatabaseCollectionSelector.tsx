@@ -101,9 +101,25 @@ export const DatabaseCollectionSelector: React.FC<DatabaseCollectionSelectorProp
   return (
     <div className="space-y-6">
       <div className="flex items-center mb-6">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 
+              text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 
+              bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 
+              focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 
+              dark:focus:ring-offset-gray-900 mr-4"
+          >
+            <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back
+          </button>
+        )}
         <h3 className="text-lg font-medium text-gray-900 dark:text-white flex-1 text-center">
           Select Database and Collection
         </h3>
+        <div className="w-[88px]"></div> {/* Spacer to balance the back button */}
       </div>
 
       <div className="grid grid-cols-2 gap-6">

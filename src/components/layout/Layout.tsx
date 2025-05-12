@@ -21,15 +21,14 @@ const Layout: FC<LayoutProps> = ({ children, currentTool, setCurrentTool, tabBar
         setCurrentTool={setCurrentTool}
       />
       
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <div className="flex flex-col">
           <TopBar onMenuClick={() => setIsSidebarOpen(!isSidebarOpen)} />
           {tabBar}
         </div>
-        
-        <main className="flex-1 overflow-auto">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-6">
-            <div className="min-h-[calc(100vh-8rem)] p-0">
+        <main className="flex-1 min-h-0 overflow-auto">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-6 h-full min-h-0 flex flex-col">
+            <div className="flex-1 min-h-0 p-0 flex flex-col">
               {children}
             </div>
           </div>

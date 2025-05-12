@@ -51,6 +51,13 @@ const groupedTools = [
       { id: 'helm-secrets', name: 'Helm Secrets', icon: ShieldCheckIcon },
     ],
   },
+  {
+    group: 'Utilities',
+    id: 'utilities',
+    tools: [
+      { id: 'port-killer', name: 'Port Killer', icon: KeyIcon },
+    ],
+  },
 ];
 
 const Sidebar: FC<SidebarProps> = ({ isOpen, setIsOpen, currentTool, setCurrentTool }) => {
