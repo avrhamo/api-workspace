@@ -58,5 +58,10 @@ contextBridge.exposeInMainWorld(
     generateEncryptionKey: () => ipcRenderer.invoke('generateEncryptionKey'),
     encryptSecret: (content: string) => ipcRenderer.invoke('encryptSecret', content),
     decryptSecret: (content: string) => ipcRenderer.invoke('decryptSecret', content),
+
+    // Keytab API
+    processKeytab: (content: ArrayBuffer) => ipcRenderer.invoke('keytab:process', content),
+    processCreateKeytab: (data: { principal: string; password: string; encryptionType: string; kvno: number }) =>
+      ipcRenderer.invoke('keytab:create', data),
   }
 );

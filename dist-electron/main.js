@@ -525,6 +525,164 @@ electron_1.ipcMain.handle('decryptSecret', async (_, content) => {
         };
     }
 });
+// Keytab IPC Handlers
+electron_1.ipcMain.handle('keytab:process', async (_, content) => {
+    try {
+        // Create a temporary file to store the keytab content
+        const tempFile = path.join(electron_1.app.getPath('temp'), `keytab-${Date.now()}`);
+        await fs.promises.writeFile(tempFile, Buffer.from(content));
+        // Use klist to read the keytab contents
+        const { stdout } = await execAsync(`/opt/homebrew/Cellar/krb5/1.21.3/bin/klist -k ${tempFile}`);
+        // Parse the output
+        const entries = stdout
+            .split('\n')
+            .filter(line => line.includes('@'))
+            .map(line => {
+            const [kvno, principal] = line.trim().split(/\s+/);
+            return {
+                principal: principal.trim(),
+                kvno: parseInt(kvno, 10),
+                timestamp: new Date().toISOString(), // klist doesn't provide timestamp
+                encryptionType: 'arcfour-hmac' // We'll use the encryption type we used to create the keytab
+            };
+        });
+        // Clean up the temporary file
+        await fs.promises.unlink(tempFile);
+        return {
+            success: true,
+            entries
+        };
+    }
+    catch (error) {
+        console.error('Keytab processing error:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to process keytab file'
+        };
+    }
+});
+// Utility: Write a minimal arcfour-hmac keytab file
+function createArcfourKeytab(principal, password, kvno = 1) {
+    // Helper: encode principal
+    function encodePrincipal(principal) {
+        // Split into components and realm
+        const [user, realm] = principal.split('@');
+        const components = user.split('/');
+        return { components, realm };
+    }
+    // Helper: derive arcfour-hmac key (RC4-HMAC)
+    function stringToUtf16le(str) {
+        return Buffer.from(str, 'utf16le');
+    }
+    function deriveArcfourKey(password, principal) {
+        // For arcfour-hmac, the key is MD4(UTF-16LE(password))
+        const pwBuf = stringToUtf16le(password);
+        const md4 = crypto_1.default.createHash('md4');
+        md4.update(pwBuf);
+        return md4.digest(); // 16 bytes
+    }
+    function writeUInt16BE(val) {
+        const buf = Buffer.alloc(2);
+        buf.writeUInt16BE(val, 0);
+        return buf;
+    }
+    function writeUInt32BE(val) {
+        const buf = Buffer.alloc(4);
+        buf.writeUInt32BE(val, 0);
+        return buf;
+    }
+    // Keytab file format (see MIT Kerberos docs)
+    const { components, realm } = encodePrincipal(principal);
+    const key = deriveArcfourKey(password, principal);
+    const enctype = 23; // arcfour-hmac
+    const now = Math.floor(Date.now() / 1000);
+    // Build keytab binary
+    const parts = [];
+    // Header: version 0x0502 (big-endian)
+    const headerBuf = writeUInt16BE(0x0502);
+    parts.push(headerBuf);
+    console.log('Header (hex):', headerBuf.toString('hex'));
+    // Compose entry fields (excluding entry length for now)
+    const entry = [];
+    // Realm
+    const realmBuf = Buffer.from(realm, 'utf8');
+    const realmLenBuf = writeUInt16BE(realmBuf.length);
+    entry.push(realmLenBuf);
+    entry.push(realmBuf);
+    console.log('Realm length:', realmBuf.length, 'Realm (string):', realm, 'Realm (hex):', realmBuf.toString('hex'));
+    // Num components (2 bytes, big-endian, should be components.length)
+    const numComponents = components.length;
+    const numComponentsBuf = writeUInt16BE(numComponents);
+    entry.push(numComponentsBuf);
+    console.log('Component count:', numComponents, 'Component count (hex):', numComponentsBuf.toString('hex'));
+    // Components
+    const compBufs = components.map((c) => Buffer.from(c, 'utf8'));
+    compBufs.forEach((b, i) => {
+        const compLenBuf = writeUInt16BE(b.length);
+        entry.push(compLenBuf);
+        entry.push(b);
+        console.log(`Component[${i}] length:`, b.length, 'Component (string):', components[i], 'Component (hex):', b.toString('hex'));
+    });
+    // Name type (4 bytes, 1 = KRB5_NT_PRINCIPAL)
+    const nameTypeBuf = writeUInt32BE(1);
+    entry.push(nameTypeBuf);
+    console.log('Name type (hex):', nameTypeBuf.toString('hex'));
+    // Timestamp (4 bytes)
+    const timestampBuf = writeUInt32BE(now);
+    entry.push(timestampBuf);
+    console.log('Timestamp (now):', now, 'Timestamp (hex):', timestampBuf.toString('hex'));
+    // Enctype (2 bytes)
+    const enctypeBuf = writeUInt16BE(enctype);
+    entry.push(enctypeBuf);
+    console.log('Enctype:', enctype, 'Enctype (hex):', enctypeBuf.toString('hex'));
+    // Key length (2 bytes)
+    const keyLenBuf = writeUInt16BE(key.length);
+    entry.push(keyLenBuf);
+    console.log('Key length:', key.length, 'Key length (hex):', keyLenBuf.toString('hex'));
+    // Key
+    entry.push(key);
+    console.log('Key (hex):', key.toString('hex'));
+    // 4-byte kvno (big-endian, MIT expects this at the end for v2)
+    const kvnoBuf = writeUInt32BE(kvno);
+    entry.push(kvnoBuf);
+    console.log('KVNO:', kvno, 'KVNO (hex):', kvnoBuf.toString('hex'));
+    // Compose entry
+    const entryBuf = Buffer.concat(entry);
+    // Entry length (4 bytes, big-endian)
+    const entryLenBuf = writeUInt32BE(entryBuf.length);
+    parts.push(entryLenBuf);
+    parts.push(entryBuf);
+    console.log('Entry length:', entryBuf.length, 'Entry length (hex):', entryLenBuf.toString('hex'));
+    console.log('Entry buffer (hex):', entryBuf.toString('hex'));
+    const finalBuf = Buffer.concat(parts);
+    console.log('Final keytab buffer (hex):', finalBuf.toString('hex'));
+    return finalBuf;
+}
+// IPC handler: create keytab
+electron_1.ipcMain.handle('keytab:create', async (_, { principal, password, encryptionType, kvno }) => {
+    try {
+        console.log('Creating keytab with:', { principal, password, encryptionType, kvno });
+        if (encryptionType !== 'arcfour-hmac') {
+            throw new Error('Only arcfour-hmac is supported in this version.');
+        }
+        const keytabBuf = createArcfourKeytab(principal, password, kvno);
+        console.log('Generated keytabBuf (hex):', keytabBuf.toString('hex'));
+        // Show save dialog
+        const { filePath, canceled } = await electron_1.dialog.showSaveDialog({
+            title: 'Save Keytab File',
+            defaultPath: `${principal.replace(/[@/]/g, '_')}.keytab`,
+            filters: [{ name: 'Keytab Files', extensions: ['keytab'] }]
+        });
+        if (canceled || !filePath) {
+            return { success: false, error: 'Save canceled' };
+        }
+        await fs.promises.writeFile(filePath, keytabBuf);
+        return { success: true, filePath };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Failed to create keytab' };
+    }
+});
 // App lifecycle handlers
 electron_1.app.whenReady().then(async () => {
     await loadEncryptionKey();
@@ -559,4 +717,14 @@ async function getMongoClient(connectionString) {
     await client.connect();
     return client;
 }
+// New IPC handler for 'file:read'
+electron_1.ipcMain.handle('file:read', async (_, filePath) => {
+    try {
+        const content = await fs.promises.readFile(filePath);
+        return { success: true, content: Array.from(content) };
+    }
+    catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Failed to read file' };
+    }
+});
 //# sourceMappingURL=main.js.map

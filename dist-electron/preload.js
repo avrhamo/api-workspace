@@ -35,5 +35,8 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     generateEncryptionKey: () => electron_1.ipcRenderer.invoke('generateEncryptionKey'),
     encryptSecret: (content) => electron_1.ipcRenderer.invoke('encryptSecret', content),
     decryptSecret: (content) => electron_1.ipcRenderer.invoke('decryptSecret', content),
+    // Keytab API
+    processKeytab: (content) => electron_1.ipcRenderer.invoke('keytab:process', content),
+    processCreateKeytab: (data) => electron_1.ipcRenderer.invoke('keytab:create', data),
 });
 //# sourceMappingURL=preload.js.map
