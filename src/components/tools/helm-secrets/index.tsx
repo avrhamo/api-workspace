@@ -4,6 +4,7 @@ import { KeyIcon, ArrowPathIcon, InformationCircleIcon, ChevronUpIcon, ChevronDo
 import * as openpgp from 'openpgp';
 import { BaseToolProps } from '../types';
 import { useToolState } from '../../../hooks/useToolState';
+import { useTheme } from '../../../hooks/useTheme';
 
 interface HelmSecretsState {
   input: string;
@@ -81,6 +82,7 @@ const HelmSecrets: React.FC<BaseToolProps> = (props) => {
     initialState: DEFAULT_STATE,
     ...props
   });
+  const { theme } = useTheme();
 
   const handleEncrypt = useCallback(async () => {
     if (!state.publicKey) {
@@ -231,7 +233,7 @@ const HelmSecrets: React.FC<BaseToolProps> = (props) => {
               value={state.isEncrypting ? state.publicKey : state.privateKey}
               onChange={handleKeyChange}
               language="text"
-              theme="vs-dark"
+              theme={theme === 'dark' ? 'vs-dark' : 'light'}
               options={{
                 minimap: { enabled: false },
                 scrollBeyondLastLine: false,
@@ -261,7 +263,7 @@ const HelmSecrets: React.FC<BaseToolProps> = (props) => {
               value={state.input}
               onChange={handleInputChange}
               language="yaml"
-              theme="vs-dark"
+              theme={theme === 'dark' ? 'vs-dark' : 'light'}
               options={{
                 minimap: { enabled: false },
                 scrollBeyondLastLine: false
@@ -279,7 +281,7 @@ const HelmSecrets: React.FC<BaseToolProps> = (props) => {
               value={state.output}
               onChange={handleOutputChange}
               language="yaml"
-              theme="vs-dark"
+              theme={theme === 'dark' ? 'vs-dark' : 'light'}
               options={{
                 readOnly: true,
                 minimap: { enabled: false },

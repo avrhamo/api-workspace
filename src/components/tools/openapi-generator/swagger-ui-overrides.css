@@ -1,0 +1,11 @@
+.swagger-ui {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+.swagger-ui .wrapper,
+.swagger-ui section {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+} 

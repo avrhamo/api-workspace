@@ -8,10 +8,31 @@ import RegexTool from './components/tools/regex';
 import TimeUnitsTool from './components/tools/time-units';
 import BSONTool from './components/tools/bson';
 import HelmSecrets from './components/tools/helm-secrets';
+import JWTTool from './components/tools/jwt';
+import TextCompareTool from './components/tools/text-compare';
+import POJOCreator from './components/tools/pojo-creator';
+import OpenAPIGenerator from './components/tools/openapi-generator';
+import PortKiller from './components/tools/port-killer';
 import { useTheme } from './hooks/useTheme';
 import { useState, useEffect } from 'react';
 import { Tab } from '@headlessui/react';
-import { CodeBracketIcon, LockClosedIcon, KeyIcon, CloudIcon, CommandLineIcon, DocumentTextIcon, ClockIcon, CubeTransparentIcon, ShieldCheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { 
+  CodeBracketIcon, 
+  LockClosedIcon, 
+  KeyIcon, 
+  CloudIcon, 
+  CommandLineIcon, 
+  DocumentTextIcon, 
+  ClockIcon, 
+  CubeTransparentIcon, 
+  ShieldCheckIcon, 
+  XMarkIcon,
+  DocumentDuplicateIcon,
+  CodeBracketSquareIcon,
+  DocumentMagnifyingGlassIcon,
+  SwatchIcon,
+  ExclamationTriangleIcon
+} from '@heroicons/react/24/outline';
 import React from 'react';
 
 const TOOL_COMPONENTS: Record<string, any> = {
@@ -24,6 +45,11 @@ const TOOL_COMPONENTS: Record<string, any> = {
   'time': TimeUnitsTool,
   'bson': BSONTool,
   'helm-secrets': HelmSecrets,
+  'jwt': JWTTool,
+  'text-compare': TextCompareTool,
+  'pojo-creator': POJOCreator,
+  'openapi-generator': OpenAPIGenerator,
+  'port-killer': PortKiller,
 };
 
 const TOOL_LABELS: Record<string, string> = {
@@ -36,6 +62,11 @@ const TOOL_LABELS: Record<string, string> = {
   'time': 'Time Units',
   'bson': 'BSON Tools',
   'helm-secrets': 'Helm Secrets',
+  'jwt': 'JWT Tools',
+  'text-compare': 'Text Compare',
+  'pojo-creator': 'POJO Creator',
+  'openapi-generator': 'OpenAPI Generator',
+  'port-killer': 'Port Killer',
 };
 
 const TOOL_ICONS: Record<string, any> = {
@@ -48,6 +79,11 @@ const TOOL_ICONS: Record<string, any> = {
   'time': ClockIcon,
   'bson': CubeTransparentIcon,
   'helm-secrets': ShieldCheckIcon,
+  'jwt': DocumentDuplicateIcon,
+  'text-compare': DocumentMagnifyingGlassIcon,
+  'pojo-creator': CodeBracketSquareIcon,
+  'openapi-generator': SwatchIcon,
+  'port-killer': ExclamationTriangleIcon,
 };
 
 // Default state for each tool
@@ -70,6 +106,25 @@ const DEFAULT_TOOL_STATES: Record<string, any> = {
     },
     availableFields: [],
   },
+  'kafka': {
+    step: 1,
+    config: {
+      brokers: ['localhost:9092'],
+      clientId: 'kafka-tester',
+      topic: undefined,
+      groupId: undefined
+    },
+    messageConfig: {
+      value: '',
+      key: undefined,
+      headers: undefined
+    },
+    messages: [],
+    error: null,
+    isConnected: false,
+    topics: [],
+    consumerId: undefined
+  },
   'helm-secrets': {
     input: '',
     output: '',
@@ -79,7 +134,50 @@ const DEFAULT_TOOL_STATES: Record<string, any> = {
     privateKey: '',
     showHowTo: false,
     editorState: undefined
-  }
+  },
+  'jwt': {
+    token: '',
+    decodedHeader: null,
+    decodedPayload: null,
+    signature: null,
+    isVerified: false,
+    error: null,
+    secret: '',
+    algorithm: 'HS256',
+  },
+  'text-compare': {
+    leftText: '',
+    rightText: '',
+    diffResult: null,
+    showWhitespace: true,
+    caseSensitive: true,
+    error: null,
+  },
+  'pojo-creator': {
+    jsonInput: '',
+    generatedCode: '',
+    targetLanguage: 'java',
+    className: 'GeneratedClass',
+    packageName: 'com.example',
+    error: null,
+    options: {
+      useLombok: true,
+      useJackson: true,
+      useValidation: true,
+    },
+  },
+  'openapi-generator': {
+    apiDefinition: '',
+    generatedSpec: null,
+    error: null,
+    options: {
+      version: '3.0.0',
+      title: 'API Documentation',
+      description: '',
+      basePath: '/api',
+      includeExamples: true,
+    },
+  },
 };
 
 interface Tab {
@@ -121,6 +219,12 @@ const App: React.FC = () => {
   }, [tabs, selectedTabIndex, tabStates]);
 
   const openNewTab = (toolId: string) => {
+    // Cleanup previous tool state if needed
+    const currentTab = tabs[selectedTabIndex];
+    if (currentTab) {
+      cleanupToolState(currentTab.toolId);
+    }
+
     const newTab: Tab = {
       id: `${toolId}-${Date.now()}`,
       toolId,
@@ -142,6 +246,33 @@ const App: React.FC = () => {
       }
       return prev;
     });
+  };
+
+  // Add cleanup function
+  const cleanupToolState = async (toolId: string) => {
+    switch (toolId) {
+      case 'kafka':
+        try {
+          // Disconnect from Kafka if connected
+          await window.electronAPI.disconnectFromKafka();
+        } catch (error) {
+          console.error('Error cleaning up Kafka connection:', error);
+        }
+        break;
+      case 'api-tester':
+        // Add any API tester cleanup if needed
+        break;
+      // Add other tool cleanup cases as needed
+    }
+  };
+
+  // Update tab selection to include cleanup
+  const handleTabChange = async (index: number) => {
+    const currentTab = tabs[selectedTabIndex];
+    if (currentTab) {
+      await cleanupToolState(currentTab.toolId);
+    }
+    setSelectedTabIndex(index);
   };
 
   const closeTab = (index: number, e: React.MouseEvent) => {
@@ -197,7 +328,7 @@ const App: React.FC = () => {
       currentTool={currentTool}
       setCurrentTool={openNewTab}
       tabBar={
-        <Tab.Group selectedIndex={selectedTabIndex} onChange={setSelectedTabIndex}>
+        <Tab.Group selectedIndex={selectedTabIndex} onChange={handleTabChange}>
           <Tab.List className="flex space-x-1 border-b border-gray-200 dark:border-gray-700">
             {tabs.map((tab, index) => (
               <Tab

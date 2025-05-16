@@ -23,9 +23,10 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     // File operations
     readFile: (filePath) => electron_1.ipcRenderer.invoke('file:read', filePath),
     writeFile: (filePath, content) => electron_1.ipcRenderer.invoke('file:write', filePath, content),
+    saveFile: (data) => electron_1.ipcRenderer.invoke('saveFile', data),
     // New method
-    findOne: (database, collection) => {
-        return electron_1.ipcRenderer.invoke('mongodb:findOne', database, collection);
+    findOne: (database, collection, query) => {
+        return electron_1.ipcRenderer.invoke('mongodb:findOne', database, collection, query);
     },
     // Helm Secrets
     listGpgKeys: () => electron_1.ipcRenderer.invoke('listGpgKeys'),
@@ -38,5 +39,15 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     // Keytab API
     processKeytab: (content) => electron_1.ipcRenderer.invoke('keytab:process', content),
     processCreateKeytab: (data) => electron_1.ipcRenderer.invoke('keytab:create', data),
+    // Kafka API
+    connectToKafka: (config) => electron_1.ipcRenderer.invoke('kafka:connect', config),
+    listKafkaTopics: () => electron_1.ipcRenderer.invoke('kafka:listTopics'),
+    createKafkaTopic: (config) => electron_1.ipcRenderer.invoke('kafka:createTopic', config),
+    produceKafkaMessage: (config) => electron_1.ipcRenderer.invoke('kafka:produce', config),
+    consumeKafkaMessages: (config) => electron_1.ipcRenderer.invoke('kafka:consume', config),
+    stopKafkaConsumer: (consumerId) => electron_1.ipcRenderer.invoke('kafka:stopConsumer', consumerId),
+    disconnectFromKafka: () => electron_1.ipcRenderer.invoke('kafka:disconnect'),
+    // Port Killer API
+    killPort: (port) => electron_1.ipcRenderer.invoke('port:kill', port),
 });
 //# sourceMappingURL=preload.js.map

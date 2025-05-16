@@ -1,0 +1,105 @@
+Monaco Editor Theme Update Bug Fix
+=================================
+
+Problem Description
+------------------
+The Monaco Editor in our Electron app was not responding to theme changes unless the page was reloaded or the tab was switched. The theme would update in the UI (Tailwind classes), but the editor itself would maintain its previous theme.
+
+Initial Investigation
+-------------------
+1. The theme change was being triggered correctly through the useTheme hook
+2. The Monaco global theme was being updated via updateMonacoTheme
+3. The editor instances were being found and updated
+4. However, the visual theme wasn't changing
+
+Root Cause
+---------
+The issue had multiple layers:
+
+1. Theme Update Timing:
+   - The Monaco global theme was being updated
+   - But the React component wasn't properly re-rendering with the new theme
+   - The editor instances were being updated in-place, which wasn't sufficient
+
+2. State Management:
+   - The editor component was relying on props and system theme
+   - Theme changes weren't immediately reflected in the component's state
+   - The editor key wasn't changing properly to force a re-render
+
+3. Event Handling:
+   - Theme changes were being handled through multiple mechanisms
+   - Direct Monaco updates weren't sufficient
+   - React's state updates weren't properly triggering editor recreation
+
+Solution
+--------
+We implemented a multi-layered solution:
+
+1. Custom Event System:
+   - Created a custom event system for theme changes
+   - Separated theme change handling from direct Monaco updates
+   - Ensured consistent theme propagation throughout the app
+
+2. Component State Management:
+   - Added local theme state in the MonacoEditor component
+   - Immediate theme state updates on theme change events
+   - Proper cleanup of old editor instances
+
+3. Editor Recreation:
+   - Used a unique key system to force editor recreation
+   - Key includes theme, readOnly status, language, and a force update counter
+   - Ensures complete editor recreation on theme changes
+
+4. Theme Normalization:
+   - Consistent theme value handling ('dark'/'light' to 'vs-dark'/'vs-light')
+   - Proper theme value propagation through the component tree
+
+Key Code Changes
+---------------
+1. useTheme Hook:
+   - Added custom event system
+   - Removed direct Monaco updates
+   - Added proper theme change broadcasting
+
+2. MonacoEditor Component:
+   - Added local theme state
+   - Implemented theme change event listener
+   - Added force update mechanism
+   - Improved editor key generation
+
+3. Theme Update Flow:
+   Theme change -> Event dispatch -> Component update -> Editor recreation
+
+Lessons Learned
+--------------
+1. React Component Lifecycle:
+   - Sometimes a complete component recreation is better than in-place updates
+   - State management is crucial for proper theme handling
+   - Key props are powerful for forcing component updates
+
+2. Monaco Editor:
+   - Global theme updates aren't always sufficient
+   - Editor instances sometimes need complete recreation
+   - Theme changes need to be handled at multiple levels
+
+3. Event Systems:
+   - Custom events can be more reliable than prop drilling
+   - Immediate state updates are crucial for theme changes
+   - Proper cleanup is essential for event listeners
+
+4. State Management:
+   - Local state can be more reliable than derived props
+   - Immediate updates are better than waiting for prop changes
+   - Force update mechanisms can be necessary for complex components
+
+Best Practices
+-------------
+1. Always use a unique key system for components that need complete recreation
+2. Implement proper cleanup for event listeners and editor instances
+3. Use local state for immediate updates
+4. Normalize theme values consistently
+5. Handle theme changes at multiple levels (global, component, instance)
+6. Use custom events for reliable theme propagation
+7. Implement proper logging for debugging theme changes
+
+This solution ensures reliable theme updates while maintaining proper component lifecycle and state management. 

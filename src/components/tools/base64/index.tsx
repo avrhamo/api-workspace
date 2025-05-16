@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import CodeEditor from '../../common/editor/MonacoEditor';
 import { DocumentDuplicateIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { useTheme } from '../../../hooks/useTheme';
 
 const MODES = [
   { id: 'encode', label: 'Encode' },
@@ -35,6 +36,8 @@ const Base64Tool: React.FC<{ state?: Base64State; setState?: (state: Partial<Bas
   // Use prop state if provided, otherwise use local state
   const state = propState || localState;
   const setState = propSetState || setLocalState;
+
+  const { theme } = useTheme();
 
   // Handle input changes
   const handleInputChange = useCallback((value: string | undefined) => {
@@ -140,7 +143,7 @@ const Base64Tool: React.FC<{ state?: Base64State; setState?: (state: Partial<Bas
               value={state.input}
               onChange={handleInputChange}
               language="plaintext"
-              theme="vs-dark"
+              theme={theme === 'dark' ? 'vs-dark' : 'light'}
               editorState={state.editorState}
               onEditorStateChange={editorState => setState(prev => ({ ...prev, editorState }))}
             />
@@ -162,7 +165,7 @@ const Base64Tool: React.FC<{ state?: Base64State; setState?: (state: Partial<Bas
             <CodeEditor
               value={state.output}
               language="plaintext"
-              theme="vs-dark"
+              theme={theme === 'dark' ? 'vs-dark' : 'light'}
               readOnly
             />
           </div>

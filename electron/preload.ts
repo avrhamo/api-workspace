@@ -41,10 +41,12 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke('file:read', filePath),
     writeFile: (filePath: string, content: string) => 
       ipcRenderer.invoke('file:write', filePath, content),
+    saveFile: (data: { content: string; path: string; fileName: string }) =>
+      ipcRenderer.invoke('saveFile', data),
 
     // New method
-    findOne: (database: string, collection: string) => {
-      return ipcRenderer.invoke('mongodb:findOne', database, collection);
+    findOne: (database: string, collection: string, query?: any) => {
+      return ipcRenderer.invoke('mongodb:findOne', database, collection, query);
     },
 
     // Helm Secrets
@@ -63,5 +65,54 @@ contextBridge.exposeInMainWorld(
     processKeytab: (content: ArrayBuffer) => ipcRenderer.invoke('keytab:process', content),
     processCreateKeytab: (data: { principal: string; password: string; encryptionType: string; kvno: number }) =>
       ipcRenderer.invoke('keytab:create', data),
+
+    // Kafka API
+    connectToKafka: (config: { brokers: string[]; clientId: string }) => 
+      ipcRenderer.invoke('kafka:connect', config),
+    listKafkaTopics: () => 
+      ipcRenderer.invoke('kafka:listTopics'),
+    createKafkaTopic: (config: { topic: string; partitions?: number; replicationFactor?: number }) => 
+      ipcRenderer.invoke('kafka:createTopic', config),
+    produceKafkaMessage: (config: { topic: string; messages: any[]; acks?: number }) => 
+      ipcRenderer.invoke('kafka:produce', config),
+    consumeKafkaMessages: (config: { 
+      topic: string; 
+      groupId: string; 
+      fromBeginning?: boolean;
+      autoCommit?: boolean;
+      maxMessages?: number;
+    }) => 
+      ipcRenderer.invoke('kafka:consume', config),
+    stopKafkaConsumer: (consumerId: string) => 
+      ipcRenderer.invoke('kafka:stopConsumer', consumerId),
+    disconnectFromKafka: () => 
+      ipcRenderer.invoke('kafka:disconnect'),
+
+    // Port Killer API
+    killPort: (port: number) => 
+      ipcRenderer.invoke('port:kill', port),
   }
 );
+
+interface KafkaConnectionConfig {
+  brokers: string[];
+  clientId: string;
+  securityProtocol?: 'PLAINTEXT' | 'SSL' | 'SASL_PLAINTEXT' | 'SASL_SSL';
+  saslMechanism?: 'PLAIN' | 'SCRAM-SHA-256' | 'SCRAM-SHA-512' | 'GSSAPI';
+  ssl?: {
+    caLocation?: string;
+    certLocation?: string;
+    keyLocation?: string;
+    keyPassword?: string;
+  };
+  kerberos?: {
+    keytabLocation?: string;
+    krb5ConfigLocation?: string;
+    serviceName?: string;
+    principal?: string;
+  };
+  sasl?: {
+    username?: string;
+    password?: string;
+  };
+}

@@ -11,6 +11,7 @@ interface ConnectionConfig {
   connectionString: string;
   database?: string;
   collection?: string;
+  query?: string;
 }
 
 interface CurlConfig {
@@ -90,16 +91,17 @@ export const ApiTester: React.FC<BaseToolProps> = (props) => {
 
   const currentStep = STEPS.find(s => s.number === state.step) || STEPS[0];
 
-  const handleDatabaseSelect = useCallback(async (db: string, collection: string) => {
+  const handleDatabaseSelect = useCallback(async (db: string, collection: string, query?: string) => {
     const newConnectionConfig = {
       ...state.connectionConfig,
       database: db,
-      collection: collection
+      collection: collection,
+      query: query
     };
 
     try {
       // Fetch a sample document to extract fields
-      const result = await window.electronAPI.findOne(db, collection);
+      const result = await window.electronAPI.findOne(db, collection, query ? JSON.parse(query) : undefined);
       if (result.success && result.document) {
         const fields = extractDocumentFields(result.document);
         setState({

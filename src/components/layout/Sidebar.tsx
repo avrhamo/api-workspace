@@ -13,6 +13,11 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   FaceSmileIcon,
+  DocumentDuplicateIcon,
+  CodeBracketSquareIcon,
+  DocumentMagnifyingGlassIcon,
+  SwatchIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../../hooks/useTheme';
 
@@ -28,40 +33,120 @@ const groupedTools = [
     group: 'API & Network',
     id: 'api-network',
     tools: [
-      { id: 'api-tester', name: 'API Tester', icon: CloudIcon },
-      { id: 'kafka', name: 'Kafka Tester', icon: CommandLineIcon },
+      { 
+        id: 'api-tester', 
+        name: 'API Tester', 
+        icon: CloudIcon,
+        description: 'Test and monitor API endpoints with MongoDB integration'
+      },
+      { 
+        id: 'kafka', 
+        name: 'Kafka Tester', 
+        icon: CommandLineIcon,
+        description: 'Produce and consume Kafka messages, manage topics, and monitor message flow'
+      },
+      { 
+        id: 'openapi-generator', 
+        name: 'OpenAPI Generator', 
+        icon: SwatchIcon,
+        description: 'Generate OpenAPI/Swagger specifications from API definitions'
+      },
+      { 
+        id: 'port-killer', 
+        name: 'Port Killer', 
+        icon: ExclamationTriangleIcon,
+        description: 'Kill processes running on specific ports'
+      },
     ],
   },
   {
     group: 'Data & Format',
     id: 'data-format',
     tools: [
-      { id: 'base64', name: 'Base64', icon: CodeBracketIcon },
-      { id: 'bson', name: 'BSON Tools', icon: CubeTransparentIcon },
-      { id: 'regex', name: 'Regex', icon: DocumentTextIcon },
-      { id: 'time', name: 'Time Units', icon: ClockIcon },
+      { 
+        id: 'base64', 
+        name: 'Base64', 
+        icon: CodeBracketIcon,
+        description: 'Encode and decode Base64 strings'
+      },
+      { 
+        id: 'bson', 
+        name: 'BSON Tools', 
+        icon: CubeTransparentIcon,
+        description: 'Work with BSON data format'
+      },
+      { 
+        id: 'regex', 
+        name: 'Regex', 
+        icon: DocumentTextIcon,
+        description: 'Test and validate regular expressions'
+      },
+      { 
+        id: 'time', 
+        name: 'Time Units', 
+        icon: ClockIcon,
+        description: 'Convert between different time units'
+      },
+      { 
+        id: 'text-compare', 
+        name: 'Text Compare', 
+        icon: DocumentMagnifyingGlassIcon,
+        description: 'Compare and find differences between two text inputs'
+      },
+      { 
+        id: 'pojo-creator', 
+        name: 'POJO Creator', 
+        icon: CodeBracketSquareIcon,
+        description: 'Generate Java classes from JSON input with various annotations'
+      },
     ],
   },
   {
     group: 'Security & Auth',
     id: 'security-auth',
     tools: [
-      { id: 'rsa', name: 'RSA', icon: LockClosedIcon },
-      { id: 'keytab', name: 'Keytab', icon: KeyIcon },
-      { id: 'helm-secrets', name: 'Helm Secrets', icon: ShieldCheckIcon },
+      { 
+        id: 'rsa', 
+        name: 'RSA', 
+        icon: LockClosedIcon,
+        description: 'Generate and manage RSA keys'
+      },
+      { 
+        id: 'keytab', 
+        name: 'Keytab', 
+        icon: KeyIcon,
+        description: 'Create and manage Kerberos keytabs'
+      },
+      { 
+        id: 'helm-secrets', 
+        name: 'Helm Secrets', 
+        icon: ShieldCheckIcon,
+        description: 'Encrypt and decrypt Helm secrets'
+      },
+      { 
+        id: 'jwt', 
+        name: 'JWT Tools', 
+        icon: DocumentDuplicateIcon,
+        description: 'Decode, verify, and work with JWT tokens'
+      },
     ],
   },
   {
     group: 'Utilities',
     id: 'utilities',
     tools: [
-      { id: 'port-killer', name: 'Port Killer', icon: KeyIcon },
+      { 
+        id: 'port-killer', 
+        name: 'Port Killer', 
+        icon: KeyIcon,
+        description: 'Find and kill processes using specific ports'
+      },
     ],
   },
 ];
 
 const Sidebar: FC<SidebarProps> = ({ isOpen, setIsOpen, currentTool, setCurrentTool }) => {
-  const { theme, setTheme } = useTheme();
+  const { theme, toggleTheme } = useTheme();
   const [openGroups, setOpenGroups] = useState(() => groupedTools.map(g => g.id));
 
   const toggleGroup = (groupId: string) => {
@@ -91,6 +176,8 @@ const Sidebar: FC<SidebarProps> = ({ isOpen, setIsOpen, currentTool, setCurrentT
         <button
           onClick={() => setIsOpen(false)}
           className="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+          title="Close sidebar"
+          aria-label="Close sidebar"
         >
           <XMarkIcon className="w-5 h-5" />
         </button>
@@ -103,13 +190,14 @@ const Sidebar: FC<SidebarProps> = ({ isOpen, setIsOpen, currentTool, setCurrentT
             <button
               onClick={() => toggleGroup(group.id)}
               className="flex items-center w-full px-2 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-300 focus:outline-none"
-              aria-expanded={openGroups.includes(group.id)}
+              aria-expanded={openGroups.includes(group.id) ? "true" : "false"}
+              aria-label={`Toggle ${group.group} group`}
               title={`Toggle ${group.group} group`}
             >
               {openGroups.includes(group.id) ? (
-                <ChevronDownIcon className="w-4 h-4 mr-2" />
+                <ChevronDownIcon className="w-4 h-4 mr-2" aria-hidden="true" />
               ) : (
-                <ChevronRightIcon className="w-4 h-4 mr-2" />
+                <ChevronRightIcon className="w-4 h-4 mr-2" aria-hidden="true" />
               )}
               {group.group}
             </button>
@@ -126,10 +214,12 @@ const Sidebar: FC<SidebarProps> = ({ isOpen, setIsOpen, currentTool, setCurrentT
                         : 'text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-gray-700 hover:text-blue-600 dark:hover:text-blue-400'
                       }
                       focus:outline-none focus:ring-2 focus:ring-blue-500/40
-                      group`}
+                      group relative`}
+                    title={tool.description}
                   >
                     <tool.icon className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
                     <span className="truncate">{tool.name}</span>
+                    <div className="absolute left-0 bottom-0 w-full h-1 bg-blue-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-200 ease-out" />
                   </button>
                 ))}
               </div>
@@ -141,7 +231,7 @@ const Sidebar: FC<SidebarProps> = ({ isOpen, setIsOpen, currentTool, setCurrentT
       {/* Bottom Actions */}
       <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex flex-col gap-2">
         <button
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          onClick={toggleTheme}
           className="w-full px-4 py-3 text-sm font-medium rounded-xl
             transition-all duration-150 ease-in-out
             text-gray-600 dark:text-gray-300

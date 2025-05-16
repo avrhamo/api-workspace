@@ -4,11 +4,12 @@ interface ConnectionConfig {
   connectionString: string;
   database?: string;
   collection?: string;
+  query?: string;
 }
 
 interface DatabaseCollectionSelectorProps {
   connectionConfig: ConnectionConfig;
-  onSelect: (database: string, collection: string) => void;
+  onSelect: (database: string, collection: string, query?: string) => void;
   onBack?: () => void;
 }
 
@@ -21,8 +22,10 @@ export const DatabaseCollectionSelector: React.FC<DatabaseCollectionSelectorProp
   const [collections, setCollections] = useState<string[]>([]);
   const [selectedDb, setSelectedDb] = useState<string>('');
   const [selectedCollection, setSelectedCollection] = useState<string>('');
+  const [query, setQuery] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [queryError, setQueryError] = useState<string | null>(null);
 
   useEffect(() => {
     loadDatabases();
@@ -80,7 +83,16 @@ export const DatabaseCollectionSelector: React.FC<DatabaseCollectionSelectorProp
 
   const handleContinue = () => {
     if (selectedDb && selectedCollection) {
-      onSelect(selectedDb, selectedCollection);
+      if (query) {
+        try {
+          JSON.parse(query);
+          setQueryError(null);
+        } catch (e) {
+          setQueryError('Invalid JSON query format');
+          return;
+        }
+      }
+      onSelect(selectedDb, selectedCollection, query || undefined);
     }
   };
 
@@ -177,6 +189,47 @@ export const DatabaseCollectionSelector: React.FC<DatabaseCollectionSelectorProp
             ))}
           </select>
         </div>
+      </div>
+
+      <div className="mt-6 space-y-2">
+        <label 
+          htmlFor="query" 
+          className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+        >
+          Query (Optional)
+          <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">
+            - MongoDB query in JSON format
+          </span>
+        </label>
+        <textarea
+          id="query"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setQueryError(null);
+          }}
+          placeholder='{"field": "value"}'
+          className={`
+            mt-1 block w-full px-4 py-2
+            text-sm font-mono
+            border rounded-md shadow-sm
+            transition-colors duration-200
+            ${queryError 
+              ? 'border-red-300 text-red-900 placeholder-red-300 focus:ring-red-500 focus:border-red-500 dark:border-red-700 dark:text-red-100' 
+              : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white'
+            }
+            focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900
+            min-h-[100px] resize-y
+          `}
+        />
+        {queryError && (
+          <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+            {queryError}
+          </p>
+        )}
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          Enter a MongoDB query in JSON format to filter the documents. Leave empty to use all documents.
+        </p>
       </div>
 
       {error && (

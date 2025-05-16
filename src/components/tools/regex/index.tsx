@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { MonacoEditor } from '../../../common/editor/MonacoEditor';
+import { useTheme } from '../../../hooks/useTheme';
 
 const Regex: React.FC = () => {
   const [pattern, setPattern] = useState('');
   const [testString, setTestString] = useState('');
   const [result, setResult] = useState<string>('');
+  const { theme } = useTheme();
 
   useEffect(() => {
     if (!pattern) {
@@ -44,7 +46,7 @@ const Regex: React.FC = () => {
                 value={pattern}
                 onChange={v => setPattern(v || '')}
                 language="plaintext"
-                theme="vs-dark"
+                theme={theme === 'dark' ? 'vs-dark' : 'light'}
                 height="200px"
                 options={{ fontSize: 16, fontFamily: 'Fira Mono, monospace', minimap: { enabled: false } }}
               />
@@ -57,7 +59,7 @@ const Regex: React.FC = () => {
                 value={testString}
                 onChange={v => setTestString(v || '')}
                 language="plaintext"
-                theme="vs-dark"
+                theme={theme === 'dark' ? 'vs-dark' : 'light'}
                 height="200px"
                 options={{ fontSize: 16, fontFamily: 'Fira Mono, monospace', minimap: { enabled: false } }}
               />

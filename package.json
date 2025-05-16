@@ -23,13 +23,20 @@
     "@headlessui/react": "^2.2.2",
     "@monaco-editor/react": "^4.7.0",
     "@types/openpgp": "^4.4.22",
+    "@types/swagger-ui-react": "^5.18.0",
     "cors": "^2.8.5",
+    "diff": "^5.1.0",
     "express": "^5.1.0",
+    "jszip": "^3.10.1",
+    "jwt-decode": "^4.0.0",
+    "kafkajs": "^2.2.4",
     "mongodb": "^6.15.0",
     "node-fetch": "^2.7.0",
     "openpgp": "^6.1.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-icons": "^4.12.0",
+    "swagger-ui-react": "^5.21.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",

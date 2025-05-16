@@ -38,6 +38,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const mongodb_1 = require("mongodb");
+const kafkajs_1 = require("kafkajs");
 const path = __importStar(require("path"));
 const node_fetch_1 = __importDefault(require("node-fetch"));
 const crypto_1 = __importDefault(require("crypto"));
@@ -46,7 +47,11 @@ const util_1 = require("util");
 const fs = __importStar(require("fs"));
 let mainWindow = null;
 let mongoClient = null;
+let kafkaClient = null;
+let kafkaProducer = null;
+let kafkaConsumer = null;
 const activeCursors = new Map();
+const activeConsumers = new Map();
 const isDev = process.env.NODE_ENV === 'development';
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
 // Encryption key management
@@ -140,13 +145,13 @@ electron_1.ipcMain.handle('mongodb:connect', async (_, connectionString) => {
         return { success: false, error: error.message };
     }
 });
-electron_1.ipcMain.handle('mongodb:findOne', async (_, database, collection) => {
+electron_1.ipcMain.handle('mongodb:findOne', async (_, database, collection, query) => {
     try {
         if (!mongoClient)
             throw new Error('Not connected to MongoDB');
         const db = mongoClient.db(database);
         const col = db.collection(collection);
-        const document = await col.findOne({});
+        const document = await col.findOne(query || {});
         const cleanDoc = convertObjectIds(document);
         return { success: true, document: cleanDoc };
     }
@@ -245,11 +250,21 @@ electron_1.ipcMain.handle('api:executeRequest', async (_, config) => {
             const client = await getMongoClient(connectionConfig.connectionString);
             const db = client.db(connectionConfig.database);
             const collection = db.collection(connectionConfig.collection);
-            // Get total count of documents
-            const totalCount = await collection.countDocuments();
-            // Create a cursor with a query to get a random document
+            // Parse the query if provided
+            let query = {};
+            if (connectionConfig.query) {
+                try {
+                    query = JSON.parse(connectionConfig.query);
+                }
+                catch (e) {
+                    console.warn('Failed to parse query:', e);
+                }
+            }
+            // Get total count of documents matching the query
+            const totalCount = await collection.countDocuments(query);
+            // Create a cursor with the query to get a random document
             const randomSkip = Math.floor(Math.random() * totalCount);
-            const cursor = collection.find({}).limit(1).skip(randomSkip);
+            const cursor = collection.find(query).limit(1).skip(randomSkip);
             const doc = await cursor.next();
             if (doc) {
                 // Create a map of curl fields to their MongoDB values
@@ -561,103 +576,6 @@ electron_1.ipcMain.handle('keytab:process', async (_, content) => {
         };
     }
 });
-// Utility: Write a minimal arcfour-hmac keytab file
-function createArcfourKeytab(principal, password, kvno = 1) {
-    // Helper: encode principal
-    function encodePrincipal(principal) {
-        // Split into components and realm
-        const [user, realm] = principal.split('@');
-        const components = user.split('/');
-        return { components, realm };
-    }
-    // Helper: derive arcfour-hmac key (RC4-HMAC)
-    function stringToUtf16le(str) {
-        return Buffer.from(str, 'utf16le');
-    }
-    function deriveArcfourKey(password, principal) {
-        // For arcfour-hmac, the key is MD4(UTF-16LE(password))
-        const pwBuf = stringToUtf16le(password);
-        const md4 = crypto_1.default.createHash('md4');
-        md4.update(pwBuf);
-        return md4.digest(); // 16 bytes
-    }
-    function writeUInt16BE(val) {
-        const buf = Buffer.alloc(2);
-        buf.writeUInt16BE(val, 0);
-        return buf;
-    }
-    function writeUInt32BE(val) {
-        const buf = Buffer.alloc(4);
-        buf.writeUInt32BE(val, 0);
-        return buf;
-    }
-    // Keytab file format (see MIT Kerberos docs)
-    const { components, realm } = encodePrincipal(principal);
-    const key = deriveArcfourKey(password, principal);
-    const enctype = 23; // arcfour-hmac
-    const now = Math.floor(Date.now() / 1000);
-    // Build keytab binary
-    const parts = [];
-    // Header: version 0x0502 (big-endian)
-    const headerBuf = writeUInt16BE(0x0502);
-    parts.push(headerBuf);
-    console.log('Header (hex):', headerBuf.toString('hex'));
-    // Compose entry fields (excluding entry length for now)
-    const entry = [];
-    // Realm
-    const realmBuf = Buffer.from(realm, 'utf8');
-    const realmLenBuf = writeUInt16BE(realmBuf.length);
-    entry.push(realmLenBuf);
-    entry.push(realmBuf);
-    console.log('Realm length:', realmBuf.length, 'Realm (string):', realm, 'Realm (hex):', realmBuf.toString('hex'));
-    // Num components (2 bytes, big-endian, should be components.length)
-    const numComponents = components.length;
-    const numComponentsBuf = writeUInt16BE(numComponents);
-    entry.push(numComponentsBuf);
-    console.log('Component count:', numComponents, 'Component count (hex):', numComponentsBuf.toString('hex'));
-    // Components
-    const compBufs = components.map((c) => Buffer.from(c, 'utf8'));
-    compBufs.forEach((b, i) => {
-        const compLenBuf = writeUInt16BE(b.length);
-        entry.push(compLenBuf);
-        entry.push(b);
-        console.log(`Component[${i}] length:`, b.length, 'Component (string):', components[i], 'Component (hex):', b.toString('hex'));
-    });
-    // Name type (4 bytes, 1 = KRB5_NT_PRINCIPAL)
-    const nameTypeBuf = writeUInt32BE(1);
-    entry.push(nameTypeBuf);
-    console.log('Name type (hex):', nameTypeBuf.toString('hex'));
-    // Timestamp (4 bytes)
-    const timestampBuf = writeUInt32BE(now);
-    entry.push(timestampBuf);
-    console.log('Timestamp (now):', now, 'Timestamp (hex):', timestampBuf.toString('hex'));
-    // Enctype (2 bytes)
-    const enctypeBuf = writeUInt16BE(enctype);
-    entry.push(enctypeBuf);
-    console.log('Enctype:', enctype, 'Enctype (hex):', enctypeBuf.toString('hex'));
-    // Key length (2 bytes)
-    const keyLenBuf = writeUInt16BE(key.length);
-    entry.push(keyLenBuf);
-    console.log('Key length:', key.length, 'Key length (hex):', keyLenBuf.toString('hex'));
-    // Key
-    entry.push(key);
-    console.log('Key (hex):', key.toString('hex'));
-    // 4-byte kvno (big-endian, MIT expects this at the end for v2)
-    const kvnoBuf = writeUInt32BE(kvno);
-    entry.push(kvnoBuf);
-    console.log('KVNO:', kvno, 'KVNO (hex):', kvnoBuf.toString('hex'));
-    // Compose entry
-    const entryBuf = Buffer.concat(entry);
-    // Entry length (4 bytes, big-endian)
-    const entryLenBuf = writeUInt32BE(entryBuf.length);
-    parts.push(entryLenBuf);
-    parts.push(entryBuf);
-    console.log('Entry length:', entryBuf.length, 'Entry length (hex):', entryLenBuf.toString('hex'));
-    console.log('Entry buffer (hex):', entryBuf.toString('hex'));
-    const finalBuf = Buffer.concat(parts);
-    console.log('Final keytab buffer (hex):', finalBuf.toString('hex'));
-    return finalBuf;
-}
 // IPC handler: create keytab
 electron_1.ipcMain.handle('keytab:create', async (_, { principal, password, encryptionType, kvno }) => {
     try {
@@ -683,6 +601,245 @@ electron_1.ipcMain.handle('keytab:create', async (_, { principal, password, encr
         return { success: false, error: error instanceof Error ? error.message : 'Failed to create keytab' };
     }
 });
+// Kafka IPC Handlers
+electron_1.ipcMain.handle('kafka:connect', async (_, config) => {
+    try {
+        // Prepare Kafka client configuration
+        const kafkaConfig = {
+            clientId: config.clientId,
+            brokers: config.brokers,
+        };
+        // Add SSL configuration if needed
+        if (config.securityProtocol === 'SSL' || config.securityProtocol === 'SASL_SSL') {
+            kafkaConfig.ssl = {
+                rejectUnauthorized: true,
+            };
+            if (config.ssl?.caLocation) {
+                kafkaConfig.ssl.ca = [await fs.promises.readFile(config.ssl.caLocation)];
+            }
+            if (config.ssl?.certLocation && config.ssl?.keyLocation) {
+                kafkaConfig.ssl.cert = await fs.promises.readFile(config.ssl.certLocation);
+                kafkaConfig.ssl.key = await fs.promises.readFile(config.ssl.keyLocation);
+                if (config.ssl.keyPassword) {
+                    kafkaConfig.ssl.passphrase = config.ssl.keyPassword;
+                }
+            }
+        }
+        // Add SASL configuration if needed
+        if (config.securityProtocol === 'SASL_PLAINTEXT' || config.securityProtocol === 'SASL_SSL') {
+            if (config.saslMechanism === 'GSSAPI' && config.kerberos) {
+                // Set Kerberos environment variables if krb5.conf is provided
+                if (config.kerberos.krb5ConfigLocation) {
+                    process.env.KRB5_CONFIG = config.kerberos.krb5ConfigLocation;
+                }
+                // Set Kerberos keytab if provided
+                if (config.kerberos.keytabLocation) {
+                    process.env.KRB5_CLIENT_KTNAME = config.kerberos.keytabLocation;
+                }
+                kafkaConfig.sasl = {
+                    mechanism: 'GSSAPI',
+                    authenticationProvider: {
+                        serviceName: config.kerberos.serviceName || 'kafka',
+                        principal: config.kerberos.principal,
+                    },
+                };
+            }
+            else if (config.saslMechanism && config.sasl) {
+                kafkaConfig.sasl = {
+                    mechanism: config.saslMechanism,
+                    username: config.sasl.username,
+                    password: config.sasl.password,
+                };
+            }
+        }
+        // Create Kafka client with the configuration
+        kafkaClient = new kafkajs_1.Kafka(kafkaConfig);
+        // Test the connection by getting metadata
+        const admin = kafkaClient.admin();
+        await admin.listTopics();
+        await admin.disconnect();
+        return { success: true };
+    }
+    catch (error) {
+        console.error('Kafka connection error:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to connect to Kafka'
+        };
+    }
+});
+electron_1.ipcMain.handle('kafka:listTopics', async () => {
+    try {
+        if (!kafkaClient)
+            throw new Error('Not connected to Kafka');
+        const admin = kafkaClient.admin();
+        const topics = await admin.listTopics();
+        await admin.disconnect();
+        return { success: true, topics };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to list topics'
+        };
+    }
+});
+electron_1.ipcMain.handle('kafka:createTopic', async (_, { topic, partitions = 1, replicationFactor = 1 }) => {
+    try {
+        if (!kafkaClient)
+            throw new Error('Not connected to Kafka');
+        const admin = kafkaClient.admin();
+        await admin.createTopics({
+            topics: [{
+                    topic,
+                    numPartitions: partitions,
+                    replicationFactor: replicationFactor,
+                }],
+        });
+        await admin.disconnect();
+        return { success: true };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to create topic'
+        };
+    }
+});
+electron_1.ipcMain.handle('kafka:produce', async (_, { topic, messages, acks = -1 }) => {
+    try {
+        if (!kafkaClient)
+            throw new Error('Not connected to Kafka');
+        // Create producer if it doesn't exist
+        if (!kafkaProducer) {
+            kafkaProducer = kafkaClient.producer();
+            await kafkaProducer.connect();
+        }
+        // Send messages
+        const result = await kafkaProducer.send({
+            topic,
+            messages: messages.map((msg) => ({
+                key: msg.key ? Buffer.from(msg.key) : undefined,
+                value: msg.value ? Buffer.from(msg.value) : undefined,
+                headers: msg.headers,
+            })),
+            acks,
+        });
+        return {
+            success: true,
+            result: {
+                topicName: result[0].topicName,
+                partition: result[0].partition,
+                baseOffset: result[0].baseOffset,
+                logAppendTime: result[0].logAppendTime,
+            }
+        };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to produce message'
+        };
+    }
+});
+electron_1.ipcMain.handle('kafka:consume', async (_, { topic, groupId, fromBeginning = false, autoCommit = true, maxMessages = 100, }) => {
+    try {
+        if (!kafkaClient)
+            throw new Error('Not connected to Kafka');
+        // Create consumer if it doesn't exist
+        if (!kafkaConsumer) {
+            kafkaConsumer = kafkaClient.consumer({ groupId });
+            await kafkaConsumer.connect();
+        }
+        // Subscribe to topic
+        await kafkaConsumer.subscribe({
+            topic,
+            fromBeginning
+        });
+        // Start consuming
+        const messages = [];
+        let messageCount = 0;
+        await kafkaConsumer.run({
+            autoCommit,
+            eachMessage: async ({ topic, partition, message }) => {
+                if (messageCount >= maxMessages) {
+                    await kafkaConsumer?.disconnect();
+                    return;
+                }
+                messages.push({
+                    ...message,
+                    topic,
+                    partition,
+                });
+                messageCount++;
+                if (messageCount >= maxMessages) {
+                    await kafkaConsumer?.disconnect();
+                }
+            },
+        });
+        // Store consumer for later cleanup
+        const consumerId = crypto_1.default.randomUUID();
+        activeConsumers.set(consumerId, kafkaConsumer);
+        return {
+            success: true,
+            consumerId,
+            messages: messages.map(msg => ({
+                topic: msg.topic,
+                partition: msg.partition,
+                offset: msg.offset,
+                key: msg.key?.toString(),
+                value: msg.value?.toString(),
+                headers: msg.headers,
+                timestamp: msg.timestamp,
+            }))
+        };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to consume messages'
+        };
+    }
+});
+electron_1.ipcMain.handle('kafka:stopConsumer', async (_, consumerId) => {
+    try {
+        const consumer = activeConsumers.get(consumerId);
+        if (consumer) {
+            await consumer.disconnect();
+            activeConsumers.delete(consumerId);
+        }
+        return { success: true };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to stop consumer'
+        };
+    }
+});
+electron_1.ipcMain.handle('kafka:disconnect', async () => {
+    try {
+        // Disconnect producer
+        if (kafkaProducer) {
+            await kafkaProducer.disconnect();
+            kafkaProducer = null;
+        }
+        // Disconnect all consumers
+        for (const [_, consumer] of activeConsumers) {
+            await consumer.disconnect();
+        }
+        activeConsumers.clear();
+        // Clear client
+        kafkaClient = null;
+        return { success: true };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to disconnect from Kafka'
+        };
+    }
+});
 // App lifecycle handlers
 electron_1.app.whenReady().then(async () => {
     await loadEncryptionKey();
@@ -699,6 +856,7 @@ electron_1.app.on('activate', () => {
     }
 });
 electron_1.app.on('quit', async () => {
+    // Clean up MongoDB
     for (const [_, cursor] of activeCursors) {
         await cursor.close();
     }
@@ -706,6 +864,14 @@ electron_1.app.on('quit', async () => {
     if (mongoClient) {
         await mongoClient.close();
     }
+    // Clean up Kafka
+    if (kafkaProducer) {
+        await kafkaProducer.disconnect();
+    }
+    for (const [_, consumer] of activeConsumers) {
+        await consumer.disconnect();
+    }
+    activeConsumers.clear();
 });
 // Error handling
 process.on('uncaughtException', (error) => {
@@ -725,6 +891,57 @@ electron_1.ipcMain.handle('file:read', async (_, filePath) => {
     }
     catch (error) {
         return { success: false, error: error instanceof Error ? error.message : 'Failed to read file' };
+    }
+});
+// Add saveFile handler
+electron_1.ipcMain.handle('saveFile', async (_, { content, path, fileName }) => {
+    try {
+        // Show save dialog
+        const { filePath, canceled } = await electron_1.dialog.showSaveDialog({
+            title: 'Save Java File',
+            defaultPath: fileName,
+            filters: [{ name: 'Java Files', extensions: ['java'] }]
+        });
+        if (canceled || !filePath) {
+            return { success: false, error: 'Save canceled' };
+        }
+        // Create directory if it doesn't exist
+        const dirPath = path.dirname(filePath);
+        await fs.promises.mkdir(dirPath, { recursive: true });
+        // Write the file
+        await fs.promises.writeFile(filePath, content, 'utf8');
+        return { success: true, filePath };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to save file'
+        };
+    }
+});
+// Port Killer IPC Handler
+electron_1.ipcMain.handle('port:kill', async (_, port) => {
+    try {
+        // For macOS, we'll use lsof to find the process and kill it
+        const { stdout: lsofOutput } = await execAsync(`lsof -i :${port} -t`);
+        if (!lsofOutput.trim()) {
+            return { success: false, error: `No process found using port ${port}` };
+        }
+        const pids = lsofOutput.trim().split('\n');
+        for (const pid of pids) {
+            await execAsync(`kill -9 ${pid}`);
+        }
+        return {
+            success: true,
+            message: `Successfully killed process(es) on port ${port}`,
+            pids: pids.map(pid => parseInt(pid.trim()))
+        };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to kill process on port'
+        };
     }
 });
 //# sourceMappingURL=main.js.map
