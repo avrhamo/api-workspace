@@ -19,9 +19,10 @@ interface POJOState {
   };
 }
 
-interface Props {
+interface POJOCreatorProps {
   state: POJOState;
   setState: (state: Partial<POJOState>) => void;
+  editorHeight?: string;
 }
 
 // Helper: Capitalize and camel-case
@@ -113,7 +114,7 @@ function generateClasses(
   return classes;
 }
 
-const POJOCreator: React.FC<Props> = ({ state, setState }) => {
+const POJOCreator: React.FC<POJOCreatorProps> = ({ state, setState, editorHeight = '800px' }) => {
   const [hoveredFile, setHoveredFile] = useState<string | null>(null);
   const [inputCollapsed, setInputCollapsed] = useState(false);
   const { theme } = useTheme();
@@ -231,7 +232,7 @@ const POJOCreator: React.FC<Props> = ({ state, setState }) => {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 JSON Input
               </label>
-              <div className="h-48 border border-gray-300 dark:border-gray-600 rounded-md overflow-hidden">
+              <div className="h-48 border border-gray-300 dark:border-gray-600 rounded-md overflow-hidden" style={{ height: editorHeight }}>
                 <MonacoEditor
                   key={theme}
                   value={state.jsonInput}
@@ -244,6 +245,7 @@ const POJOCreator: React.FC<Props> = ({ state, setState }) => {
                   onMount={(editor, monaco) => {
                     monacoRef.current = { editor, monaco };
                   }}
+                  height={editorHeight}
                 />
               </div>
             </div>
@@ -300,14 +302,14 @@ const POJOCreator: React.FC<Props> = ({ state, setState }) => {
               Save All
             </button>
           </div>
-          <div className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md overflow-auto min-h-0">
+          <div className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md overflow-auto min-h-0" style={{ height: editorHeight }}>
             <MonacoEditor
               key={theme}
               value={selectedCode}
               language="java"
               readOnly
               theme={theme === 'dark' ? 'vs-dark' : 'light'}
-              height="400px"
+              height={editorHeight}
               onMount={(editor, monaco) => {
                 monacoRef.current = { editor, monaco };
               }}

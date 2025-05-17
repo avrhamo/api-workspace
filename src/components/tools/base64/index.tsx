@@ -22,7 +22,13 @@ interface Base64State {
   };
 }
 
-const Base64Tool: React.FC<{ state?: Base64State; setState?: (state: Partial<Base64State>) => void }> = ({ state: propState, setState: propSetState }) => {
+interface Base64ToolProps {
+  state?: Base64State;
+  setState?: (state: Partial<Base64State>) => void;
+  editorHeight?: string;
+}
+
+const Base64Tool: React.FC<Base64ToolProps> = ({ state: propState, setState: propSetState, editorHeight = '800px' }) => {
   const [localState, setLocalState] = useState<Base64State>(() => ({
     mode: 'encode',
     input: '',
@@ -127,7 +133,7 @@ const Base64Tool: React.FC<{ state?: Base64State; setState?: (state: Partial<Bas
       </div>
 
       <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
-        <div className="flex flex-col">
+        <div className="flex flex-col" style={{ height: editorHeight }}>
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Input</label>
             <button
@@ -146,11 +152,12 @@ const Base64Tool: React.FC<{ state?: Base64State; setState?: (state: Partial<Bas
               theme={theme === 'dark' ? 'vs-dark' : 'light'}
               editorState={state.editorState}
               onEditorStateChange={editorState => setState(prev => ({ ...prev, editorState }))}
+              height={editorHeight}
             />
           </div>
         </div>
 
-        <div className="flex flex-col">
+        <div className="flex flex-col" style={{ height: editorHeight }}>
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Output</label>
             <button
@@ -167,6 +174,7 @@ const Base64Tool: React.FC<{ state?: Base64State; setState?: (state: Partial<Bas
               language="plaintext"
               theme={theme === 'dark' ? 'vs-dark' : 'light'}
               readOnly
+              height={editorHeight}
             />
           </div>
         </div>
