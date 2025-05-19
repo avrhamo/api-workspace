@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { updateMonacoTheme } from '../config/monaco';
 
-type Theme = 'light' | 'dark';
+// type Theme = 'light' | 'dark';
+type Theme = 'dark' | 'light';
 
 // Create a custom event for theme changes
 const THEME_CHANGE_EVENT = 'theme-change';
@@ -40,6 +41,13 @@ export const useTheme = () => {
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [updateTheme]);
+
+  useEffect(() => {
+    // Ensure <html> class and localStorage are always in sync with theme state
+    document.documentElement.classList.remove('light', 'dark');
+    document.documentElement.classList.add(theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
   return {
     theme,

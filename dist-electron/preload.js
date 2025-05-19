@@ -17,6 +17,7 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     executeTest: (config) => electron_1.ipcRenderer.invoke('mongodb:executeTest', config),
     // API Request Execution
     executeRequest: (config) => electron_1.ipcRenderer.invoke('api:executeRequest', config),
+    executeRequests: (configs) => electron_1.ipcRenderer.invoke('api:executeRequests', configs),
     // System operations
     isDarkMode: () => electron_1.ipcRenderer.invoke('dark-mode:get'),
     toggleDarkMode: () => electron_1.ipcRenderer.invoke('dark-mode:toggle'),
@@ -49,5 +50,11 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     disconnectFromKafka: () => electron_1.ipcRenderer.invoke('kafka:disconnect'),
     // Port Killer API
     killPort: (port) => electron_1.ipcRenderer.invoke('port:kill', port),
+    // MongoDB operations
+    mongodb: {
+        initializeBatch: (config) => electron_1.ipcRenderer.invoke('mongodb:initializeBatch', config),
+        getNextDocument: (batchId) => electron_1.ipcRenderer.invoke('mongodb:getNextDocument', batchId),
+        closeBatch: (batchId) => electron_1.ipcRenderer.invoke('mongodb:closeBatch', batchId),
+    },
 });
 //# sourceMappingURL=preload.js.map

@@ -3,8 +3,9 @@ import { XMarkIcon, MagnifyingGlassIcon, PlusIcon, MinusIcon, DocumentTextIcon }
 
 interface CurlAnalyzerProps {
   curlCommand: string;
-  onFieldMap: (field: string, mappedTo: string) => void;
+  onFieldMap: (field: string, mappingInfo: MappingInfo) => void;
   availableFields: string[];
+  requestData?: any;
 }
 
 interface ParsedCurl {
@@ -15,7 +16,7 @@ interface ParsedCurl {
     queryParams: { [key: string]: string };
   };
   headers: { [key: string]: string };
-  body: Record<string, unknown> | string | null;
+  body: Record<string, unknown> | string | undefined;
 }
 
 interface PanelState {
@@ -328,7 +329,10 @@ const MappingPanel: React.FC<MappingPanelProps> = ({
       {/* Panel */}
       <div
         ref={panelRef}
-        style={positionStyle}
+        style={{
+          ...positionStyle,
+          maxHeight: '90vh',
+        }}
         className={`
           bg-white dark:bg-gray-800 shadow-xl border border-gray-200 dark:border-gray-700
           z-50 flex flex-col rounded-lg overflow-hidden
@@ -350,8 +354,8 @@ const MappingPanel: React.FC<MappingPanelProps> = ({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-4">
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="h-full overflow-y-auto p-4">
               <div className="border-b border-gray-200 dark:border-gray-700 mb-4">
                 <nav className="-mb-px flex space-x-8" aria-label="Mapping options">
                   <button
@@ -624,7 +628,7 @@ const parseCurlCommand = (curl: string): ParsedCurl => {
         queryParams: {}
       },
       headers: {},
-      body: null
+      body: undefined  // Initialize as undefined
     };
 
     // Parse the first line (URL and method)
@@ -680,63 +684,65 @@ const parseCurlCommand = (curl: string): ParsedCurl => {
       }
     });
 
-    // Parse body
+    // Only try to parse body for non-GET requests or if explicitly provided
     const dataIndex = lines.findIndex(line => 
       line.includes('--data') || 
       line.includes('--data-raw') || 
       line.includes('-d')
     );
 
-    if (dataIndex !== -1) {
-      let bodyContent = '';
-      let i = dataIndex;
-      const currentLine = lines[i];
-      
-      const bodyStartMatch = currentLine.match(/(?:--data(?:-raw)?|-d)\s+'(.*)$/);
-      
-      if (bodyStartMatch) {
-        bodyContent = bodyStartMatch[1];
+    if (parsed.method !== 'GET' || dataIndex !== -1) {
+      if (dataIndex !== -1) {
+        let bodyContent = '';
+        let i = dataIndex;
+        const currentLine = lines[i];
         
-        if (!currentLine.endsWith("'") || currentLine.endsWith("\\'")) {
-          i++;
-          while (i < lines.length) {
-            const line = lines[i];
-            if (line.endsWith("'") && !line.endsWith("\\'")) {
-              bodyContent += '\n' + line.slice(0, -1);
-              break;
-            } else {
-              bodyContent += '\n' + line;
-            }
-            i++;
-          }
-        }
-
-        bodyContent = bodyContent.trim();
+        const bodyStartMatch = currentLine.match(/(?:--data(?:-raw)?|-d)\s+'(.*)$/);
         
-        try {
-          if (bodyContent.startsWith("'") && bodyContent.endsWith("'")) {
-            bodyContent = bodyContent.slice(1, -1);
-          }
+        if (bodyStartMatch) {
+          bodyContent = bodyStartMatch[1];
           
-          bodyContent = bodyContent
-            .replace(/\\n/g, '\n')
-            .replace(/\\"/g, '"')
-            .replace(/\\'/g, "'")
-            .replace(/\\\\/g, '\\');
-
-          try {
-            parsed.body = JSON.parse(bodyContent);
-          } catch (firstError) {
-            const cleanContent = bodyContent
-              .replace(/,\s*}/g, '}')
-              .replace(/,\s*\]/g, ']')
-              .replace(/\n\s*/g, '')
-              .trim();
-            
-            parsed.body = JSON.parse(cleanContent);
+          if (!currentLine.endsWith("'") || currentLine.endsWith("\\'")) {
+            i++;
+            while (i < lines.length) {
+              const line = lines[i];
+              if (line.endsWith("'") && !line.endsWith("\\'")) {
+                bodyContent += '\n' + line.slice(0, -1);
+                break;
+              } else {
+                bodyContent += '\n' + line;
+              }
+              i++;
+            }
           }
-        } catch (error) {
-          parsed.body = bodyContent;
+
+          bodyContent = bodyContent.trim();
+          
+          try {
+            if (bodyContent.startsWith("'") && bodyContent.endsWith("'")) {
+              bodyContent = bodyContent.slice(1, -1);
+            }
+            
+            bodyContent = bodyContent
+              .replace(/\\n/g, '\n')
+              .replace(/\\"/g, '"')
+              .replace(/\\'/g, "'")
+              .replace(/\\\\/g, '\\');
+
+            try {
+              parsed.body = JSON.parse(bodyContent);
+            } catch (firstError) {
+              const cleanContent = bodyContent
+                .replace(/,\s*}/g, '}')
+                .replace(/,\s*\]/g, ']')
+                .replace(/\n\s*/g, '')
+                .trim();
+              
+              parsed.body = JSON.parse(cleanContent);
+            }
+          } catch (error) {
+            parsed.body = bodyContent;
+          }
         }
       }
     }
@@ -750,7 +756,8 @@ const parseCurlCommand = (curl: string): ParsedCurl => {
 export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
   curlCommand,
   onFieldMap,
-  availableFields
+  availableFields,
+  requestData
 }) => {
   const [parsedCurl, setParsedCurl] = useState<ParsedCurl | null>(null);
   const [panelState, setPanelState] = useState<PanelState>({
@@ -765,13 +772,40 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
 
   useEffect(() => {
     try {
-      setParsedCurl(parseCurlCommand(curlCommand));
+      // First parse the CURL command to get the basic structure
+      const parsed = parseCurlCommand(curlCommand);
+      
+      // If we have requestData from props, use it instead of parsed body
+      if (requestData !== undefined) {
+        console.log('[CurlAnalyzer] Using provided request data:', {
+          requestData: typeof requestData === 'string' 
+            ? requestData.substring(0, 100) + '...' 
+            : requestData
+        });
+        parsed.body = requestData;
+      } else {
+        console.log('[CurlAnalyzer] No request data provided, using parsed body:', {
+          body: typeof parsed.body === 'string' 
+            ? parsed.body.substring(0, 100) + '...' 
+            : parsed.body
+        });
+      }
+      
+      console.log('[CurlAnalyzer] Final parsed CURL command:', {
+        ...parsed,
+        body: typeof parsed.body === 'string' 
+          ? parsed.body.substring(0, 100) + '...' 
+          : parsed.body
+      });
+      
+      setParsedCurl(parsed);
       setError(null);
     } catch (err) {
+      console.error('[CurlAnalyzer] Error parsing CURL command:', err);
       setError(err instanceof Error ? err.message : 'Failed to parse CURL command');
       setParsedCurl(null);
     }
-  }, [curlCommand]);
+  }, [curlCommand, requestData]);
 
   const handleKeyClick = useCallback((path: string, type: string, event: React.MouseEvent) => {
     setSelectedPath(path);
@@ -826,7 +860,7 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
       [panelState.fieldPath]: mappingInfo
     }));
     
-    onFieldMap(field, mappingInfo.targetField);
+    onFieldMap(panelState.fieldPath, mappingInfo);
   }, [panelState.fieldPath, onFieldMap]);
 
   const handleTest = useCallback(() => {
@@ -932,10 +966,10 @@ export const CurlAnalyzer: React.FC<CurlAnalyzerProps> = ({
             </div>
           </div>
 
-          {/* Body Section */}
+          {/* Request Body Section */}
           {parsedCurl.body && (
             <div>
-              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Body</h3>
+              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Request Body</h3>
               <div className="bg-gray-50 dark:bg-gray-800 rounded-md p-4">
                 <JsonTree
                   data={parsedCurl.body}

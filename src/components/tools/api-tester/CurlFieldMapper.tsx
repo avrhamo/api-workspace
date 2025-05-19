@@ -8,14 +8,28 @@ interface ConnectionConfig {
   collection?: string;
 }
 
+interface MappingInfo {
+  targetField: string;
+  type: 'mongodb' | 'fixed' | 'special';
+  value?: string;
+}
+
 interface CurlFieldMapperProps {
   parsedCommand: {
     rawCommand: string;
     method?: string;
     url?: string;
+    headers?: Record<string, string>;
+    data?: any;
   };
   connectionConfig: ConnectionConfig;
-  onMap: (mappedFields: Record<string, string>) => void;
+  onMap: (mappedFields: Record<string, MappingInfo>, updatedParsedCommand: {
+    rawCommand: string;
+    method?: string;
+    url?: string;
+    headers?: Record<string, string>;
+    data?: any;
+  }) => void;
   onBack?: () => void;
 }
 
@@ -25,7 +39,7 @@ export const CurlFieldMapper: React.FC<CurlFieldMapperProps> = ({
   onMap,
   onBack
 }) => {
-  const [mappedFields, setMappedFields] = useState<Record<string, string>>({});
+  const [mappedFields, setMappedFields] = useState<Record<string, MappingInfo>>({});
   const [sampleDocument, setSampleDocument] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -71,15 +85,26 @@ export const CurlFieldMapper: React.FC<CurlFieldMapperProps> = ({
     });
   };
 
-  const handleFieldMap = (field: string, mappedTo: string) => {
+  const handleFieldMap = (field: string, mappingInfo: MappingInfo) => {
+    console.log('[CurlFieldMapper] Field mapping received:', { field, mappingInfo });
     setMappedFields(prev => ({
       ...prev,
-      [field]: mappedTo,
+      [field]: mappingInfo,
     }));
   };
 
   const handleSubmit = () => {
-    onMap(mappedFields);
+    console.log('[CurlFieldMapper] Submitting mapped fields:', {
+      mappedFields,
+      parsedCommand: {
+        ...parsedCommand,
+        data: typeof parsedCommand.data === 'string' 
+          ? parsedCommand.data.substring(0, 100) + '...' 
+          : parsedCommand.data
+      }
+    });
+
+    onMap(mappedFields, parsedCommand);
   };
 
   if (isLoading) {
@@ -139,6 +164,7 @@ export const CurlFieldMapper: React.FC<CurlFieldMapperProps> = ({
           curlCommand={parsedCommand.rawCommand}
           onFieldMap={handleFieldMap}
           availableFields={documentFields}
+          requestData={parsedCommand.data}
         />
 
         {/* Sample Document Preview */}

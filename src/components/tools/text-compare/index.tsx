@@ -1,12 +1,11 @@
-import React, { useEffect } from 'react';
-import { diffWords } from 'diff';
+import React, { useRef, useEffect, useMemo } from 'react';
+import MonacoDiffEditor from '../../../common/editor/MonacoDiffEditor';
+import { useTheme } from '../../../hooks/useTheme';
+import type { editor } from 'monaco-editor';
 
 interface TextCompareState {
   leftText: string;
   rightText: string;
-  diffResult: any[] | null;
-  showWhitespace: boolean;
-  caseSensitive: boolean;
   error: string | null;
 }
 
@@ -16,105 +15,96 @@ interface Props {
 }
 
 const TextCompareTool: React.FC<Props> = ({ state, setState }) => {
-  useEffect(() => {
-    if (state.leftText || state.rightText) {
-      try {
-        const options = {
-          ignoreCase: !state.caseSensitive,
-          ignoreWhitespace: !state.showWhitespace,
-        };
-        
-        const diff = diffWords(state.leftText, state.rightText, options);
-        setState({ diffResult: diff, error: null });
-      } catch (error) {
-        setState({ error: 'Error comparing texts' });
-      }
-    }
-  }, [state.leftText, state.rightText, state.caseSensitive, state.showWhitespace]);
+  const { theme } = useTheme();
+  const editorRef = useRef<editor.IStandaloneDiffEditor | null>(null);
 
-  const renderDiff = () => {
-    if (!state.diffResult) return null;
+  // Memoize monacoTheme so it only changes when theme changes
+  const monacoTheme = useMemo(() => (theme === 'dark' ? 'vs-dark' : 'vs-light'), [theme]);
 
-    return state.diffResult.map((part, index) => {
-      const className = part.added
-        ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-200'
-        : part.removed
-        ? 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-200'
-        : 'bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200';
+  console.log('[TextCompareTool] render', { theme, monacoTheme, key: monacoTheme });
 
-      return (
-        <span key={index} className={className}>
-          {part.value}
-        </span>
-      );
-    });
+  const editorOptions: editor.IDiffEditorConstructionOptions = {
+    readOnly: false,
+    renderWhitespace: 'none',
+    ignoreTrimWhitespace: true,
+    renderSideBySide: true,
+    enableSplitViewResizing: true,
+    renderIndicators: true,
+    wordWrap: 'on',
+    lineNumbers: 'on',
+    scrollBeyondLastLine: false,
+    minimap: { enabled: false },
+    renderOverviewRuler: true,
+    overviewRulerBorder: true,
+    overviewRulerLanes: 2,
   };
 
+  // Keep both editors editable at all times
+  useEffect(() => {
+    if (editorRef.current) {
+      const originalEditor = editorRef.current.getOriginalEditor();
+      const modifiedEditor = editorRef.current.getModifiedEditor();
+      originalEditor.updateOptions({ readOnly: false });
+      modifiedEditor.updateOptions({ readOnly: false });
+    }
+  }, [state.leftText, state.rightText]);
+
   return (
-    <div className="p-4 h-full flex flex-col">
-      <div className="mb-4 flex space-x-4">
-        <label className="inline-flex items-center">
-          <input
-            type="checkbox"
-            className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-            checked={state.showWhitespace}
-            onChange={(e) => setState({ showWhitespace: e.target.checked })}
-          />
-          <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Show Whitespace</span>
-        </label>
-        <label className="inline-flex items-center">
-          <input
-            type="checkbox"
-            className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-            checked={state.caseSensitive}
-            onChange={(e) => setState({ caseSensitive: e.target.checked })}
-          />
-          <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Case Sensitive</span>
-        </label>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
-        <div className="flex flex-col">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Original Text
-          </label>
-          <textarea
-            className="flex-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-            value={state.leftText}
-            onChange={(e) => setState({ leftText: e.target.value })}
-            placeholder="Enter or paste original text here..."
-          />
-        </div>
-
-        <div className="flex flex-col">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Compare With
-          </label>
-          <textarea
-            className="flex-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-            value={state.rightText}
-            onChange={(e) => setState({ rightText: e.target.value })}
-            placeholder="Enter or paste text to compare with..."
-          />
-        </div>
+    <div className="flex-1 min-h-[400px] p-4 flex flex-col">
+      <div className="mb-4 flex flex-wrap gap-2 items-center">
+        <button
+          className="px-3 py-1 rounded bg-blue-600 text-white font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          title="Paste clipboard to left editor"
+          onClick={async () => {
+            try {
+              const text = await navigator.clipboard.readText();
+              setState({ leftText: text });
+            } catch (err) {
+              alert('Failed to read clipboard.');
+            }
+          }}
+        >
+          Paste to Left
+        </button>
+        <button
+          className="px-3 py-1 rounded bg-gray-500 text-white font-medium hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400"
+          title="Clear left editor"
+          onClick={() => setState({ leftText: '' })}
+        >
+          Clear Left
+        </button>
       </div>
 
       {state.error && (
-        <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-md">
+        <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-md">
           {state.error}
         </div>
       )}
 
-      {state.diffResult && (
-        <div className="mt-4">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Differences</h3>
-          <div className="p-4 bg-white dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700">
-            <div className="whitespace-pre-wrap font-mono text-sm">
-              {renderDiff()}
-            </div>
-          </div>
-        </div>
-      )}
+      <div className="flex-1 min-h-[400px]">
+        <MonacoDiffEditor
+          key={monacoTheme}
+          theme={monacoTheme}
+          original={state.leftText}
+          modified={state.rightText}
+          language="plaintext"
+          height="100vh"
+          options={editorOptions}
+          onMount={(editor) => {
+            console.log('[TextCompareTool] MonacoDiffEditor onMount', { theme, monacoTheme });
+            editorRef.current = editor;
+            // Listen for changes in both editors
+            editor.getOriginalEditor().onDidChangeModelContent(() => {
+              const value = editor.getOriginalEditor().getValue();
+              setState({ leftText: value });
+            });
+            editor.getModifiedEditor().onDidChangeModelContent(() => {
+              const value = editor.getModifiedEditor().getValue();
+              setState({ rightText: value });
+            });
+          }}
+        />
+      </div>
     </div>
   );
 };

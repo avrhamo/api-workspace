@@ -15,6 +15,7 @@ let kafkaProducer: Producer | null = null;
 let kafkaConsumer: Consumer | null = null;
 const activeCursors = new Map();
 const activeConsumers = new Map();
+const activeBatches = new Map();
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -208,38 +209,185 @@ ipcMain.handle('mongodb:closeCursor', async (_, cursorId: string) => {
   }
 });
 
+interface BatchState {
+  cursor: any;
+  currentBatch: any[];
+  batchSize: number;
+  hasMore: boolean;
+  totalCount: number;
+  currentIndex: number;
+}
+
+// New IPC handler for batch initialization
+ipcMain.handle('mongodb:initializeBatch', async (_, { 
+  database, 
+  collection, 
+  query = {}, 
+  batchSize = 100 
+}) => {
+  try {
+    if (!mongoClient) throw new Error('Not connected to MongoDB');
+    
+    const db = mongoClient.db(database);
+    const col = db.collection(collection);
+    
+    // Parse the query if provided
+    let parsedQuery = {};
+    if (typeof query === 'string') {
+      try {
+        parsedQuery = JSON.parse(query);
+      } catch (e) {
+        console.warn('Failed to parse query:', e);
+      }
+    } else {
+      parsedQuery = query;
+    }
+    
+    // Create cursor and get total count
+    const cursor = col.find(parsedQuery);
+    const totalCount = await cursor.count();
+    
+    // Generate a unique batch ID
+    const batchId = crypto.randomUUID();
+    
+    // Initialize batch state
+    const batchState: BatchState = {
+      cursor,
+      currentBatch: [],
+      batchSize,
+      hasMore: true,
+      totalCount,
+      currentIndex: 0
+    };
+    
+    // Store the batch state
+    activeBatches.set(batchId, batchState);
+    
+    // Load first batch
+    await loadNextBatch(batchId);
+    
+    return { 
+      success: true, 
+      batchId,
+      totalCount,
+      hasMore: batchState.hasMore
+    };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to initialize batch' 
+    };
+  }
+});
+
+// Helper function to load next batch
+async function loadNextBatch(batchId: string) {
+  const batchState = activeBatches.get(batchId);
+  if (!batchState) throw new Error('Batch not found');
+  
+  const { cursor, batchSize } = batchState;
+  
+  // Clear current batch
+  batchState.currentBatch = [];
+  batchState.currentIndex = 0;
+  
+  // Fetch next batch
+  for (let i = 0; i < batchSize; i++) {
+    const doc = await cursor.next();
+    if (!doc) {
+      batchState.hasMore = false;
+      break;
+    }
+    batchState.currentBatch.push(doc);
+  }
+}
+
+// New IPC handler to get next document from batch
+ipcMain.handle('mongodb:getNextDocument', async (_, batchId: string) => {
+  try {
+    const batchState = activeBatches.get(batchId);
+    if (!batchState) throw new Error('Batch not found');
+    
+    const { currentBatch, currentIndex, hasMore, totalCount } = batchState;
+    
+    // If we've reached the end of current batch and there are more documents
+    if (currentIndex >= currentBatch.length && hasMore) {
+      await loadNextBatch(batchId);
+    }
+    
+    // If we still have documents in the current batch
+    if (currentIndex < batchState.currentBatch.length) {
+      const doc = batchState.currentBatch[currentIndex];
+      batchState.currentIndex++;
+      
+      return {
+        success: true,
+        document: convertObjectIds(doc),
+        hasMore: batchState.hasMore || currentIndex < batchState.currentBatch.length - 1,
+        totalCount
+      };
+    }
+    
+    return {
+      success: true,
+      document: null,
+      hasMore: false,
+      totalCount
+    };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to get next document' 
+    };
+  }
+});
+
+// New IPC handler to close batch
+ipcMain.handle('mongodb:closeBatch', async (_, batchId: string) => {
+  try {
+    const batchState = activeBatches.get(batchId);
+    if (batchState) {
+      await batchState.cursor.close();
+      activeBatches.delete(batchId);
+    }
+    return { success: true };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to close batch' 
+    };
+  }
+});
+
 // API Request Execution Handler
 ipcMain.handle('api:executeRequest', async (_, config) => {
   const startTime = Date.now();
   try {
-    const { method = 'GET', url, headers = {}, data, mappedFields, connectionConfig } = config;
+    const { method = 'GET', url, headers = {}, data, mappedFields, connectionConfig, batchId } = config;
     
-    // First, fetch a document from MongoDB to get the values
+    // First, get a document from the current batch
     let mongoValues: Record<string, any> = {};
-    if (Object.keys(mappedFields).length > 0 && connectionConfig.database && connectionConfig.collection) {
-      const client = await getMongoClient(connectionConfig.connectionString);
-      const db = client.db(connectionConfig.database);
-      const collection = db.collection(connectionConfig.collection);
-      
-      // Parse the query if provided
-      let query = {};
-      if (connectionConfig.query) {
-        try {
-          query = JSON.parse(connectionConfig.query);
-        } catch (e) {
-          console.warn('Failed to parse query:', e);
-        }
+    if (Object.keys(mappedFields).length > 0 && batchId) {
+      const batchState = activeBatches.get(batchId);
+      if (!batchState) {
+        throw new Error('Batch not found');
       }
       
-      // Get total count of documents matching the query
-      const totalCount = await collection.countDocuments(query);
+      const { currentBatch, currentIndex, hasMore } = batchState;
       
-      // Create a cursor with the query to get a random document
-      const randomSkip = Math.floor(Math.random() * totalCount);
-      const cursor = collection.find(query).limit(1).skip(randomSkip);
-      const doc = await cursor.next();
+      // If we've reached the end of current batch and there are more documents
+      if (currentIndex >= currentBatch.length && hasMore) {
+        await loadNextBatch(batchId);
+      }
+      
+      // Get the next document
+      const doc = currentIndex < batchState.currentBatch.length 
+        ? batchState.currentBatch[currentIndex]
+        : null;
       
       if (doc) {
+        batchState.currentIndex++; // Increment the index for next request
+        
         // Create a map of curl fields to their MongoDB values
         mongoValues = Object.entries(mappedFields).reduce((acc, [curlField, fieldConfig]) => {
           // Handle special values first
@@ -251,17 +399,20 @@ ipcMain.handle('api:executeRequest', async (_, config) => {
           // Handle MongoDB field paths
           let value = doc;
           if (typeof fieldConfig === 'string') {
-            for (const key of fieldConfig.split('.')) {
+            // Split the field path to get the specific field we want
+            const fieldParts = fieldConfig.split('.');
+            // Navigate to the specific field in the document
+            for (const key of fieldParts) {
               value = value?.[key];
             }
+            // Only use the specific field value, not the entire document
+            acc[curlField] = value;
+          } else {
+            acc[curlField] = value;
           }
-          acc[curlField] = value;
           return acc;
         }, {} as Record<string, any>);
       }
-      
-      // Close the cursor
-      await cursor.close();
     }
 
     // Now populate the request with MongoDB values
@@ -286,60 +437,97 @@ ipcMain.handle('api:executeRequest', async (_, config) => {
     // Replace header values
     Object.entries(mongoValues).forEach(([field, value]) => {
       if (field.startsWith('header.')) {
-        const headerName = field.split('.')[1];
-        populatedHeaders[headerName] = value?.toString() || '';
+        const parts = field.split('.');
+        const headerName = parts[1]; // e.g., 'encodedHeader'
+        const fieldPath = parts.slice(2).join('.'); // e.g., 'email'
+        
+        console.log(`Processing header field:`, {
+          field,
+          parts,
+          headerName,
+          fieldPath,
+          value,
+          valueType: typeof value,
+          originalHeaderValue: populatedHeaders[headerName]
+        });
+
+        const originalValue = populatedHeaders[headerName];
+        const isBase64 = originalValue && /^[A-Za-z0-9+/=]+$/.test(originalValue);
+        
+        console.log(`Header value details:`, {
+          headerName,
+          originalValue,
+          isBase64,
+          value
+        });
+
+        if (isBase64) {
+          try {
+            const decodedValue = atob(originalValue);
+            console.log('Processing header field:', {
+              field,
+              fieldPath,
+              value,
+              originalValue: decodedValue
+            });
+            
+            const headerObj = JSON.parse(decodedValue);
+            console.log('Original header object:', headerObj);
+            
+            // Update only the specific field in the object
+            const fieldParts = fieldPath.split('.');
+            let currentObj = headerObj;
+            
+            // Navigate to the nested object where we need to update the value
+            for (let i = 0; i < fieldParts.length - 1; i++) {
+              if (!currentObj[fieldParts[i]]) {
+                currentObj[fieldParts[i]] = {};
+              }
+              currentObj = currentObj[fieldParts[i]];
+            }
+            
+            // Update the specific field with just the value, not the entire document
+            const lastField = fieldParts[fieldParts.length - 1];
+            currentObj[lastField] = value;
+            
+            console.log('Updated header object:', {
+              fieldPath,
+              newValue: value,
+              updatedObject: headerObj
+            });
+            
+            // Encode back to base64
+            const newValue = btoa(JSON.stringify(headerObj));
+            populatedHeaders[headerName] = newValue;
+            console.log('Final header value:', {
+              headerName,
+              newValue,
+              decoded: atob(newValue)
+            });
+          } catch (e) {
+            console.error('Error processing base64 header:', {
+              error: e,
+              headerName,
+              fieldPath,
+              originalValue,
+              value
+            });
+            // Fallback to direct value if processing fails
+            populatedHeaders[headerName] = value?.toString() || '';
+          }
+        } else {
+          populatedHeaders[headerName] = value?.toString() || '';
+        }
       }
     });
 
-    // Replace body values
-    if (data) {
-      let initialData: any;
-      
-      // First parse or clone the initial data
-      if (typeof data === 'string') {
-        try {
-          initialData = JSON.parse(data);
-        } catch (error) {
-          initialData = data;
-        }
-      } else if (typeof data === 'object' && data !== null) {
-        initialData = JSON.parse(JSON.stringify(data)); // Deep clone
-      } else {
-        initialData = data;
-      }
-
-      // Now apply all the mapped values
-      populatedData = initialData;
-      Object.entries(mongoValues).forEach(([field, value]) => {
-        // Only process body fields (not url., query., or header. prefixed)
-        if (!field.startsWith('url.') && !field.startsWith('query.') && !field.startsWith('header.')) {
-          // For body fields, check if it starts with body. prefix
-          const actualField = field.startsWith('body.') ? field.split('.').slice(1).join('.') : field;
-          
-          // For direct fields (no dots), just set them directly
-          if (!actualField.includes('.')) {
-            populatedData[actualField] = value;
-          } else {
-            // Handle nested fields
-            const fieldParts = actualField.split('.');
-            let current = populatedData;
-            
-            // Navigate to the correct nesting level
-            for (let i = 0; i < fieldParts.length - 1; i++) {
-              const part = fieldParts[i];
-              if (!(part in current)) {
-                current[part] = {};
-              }
-              current = current[part];
-            }
-            
-            // Set the value at the final level
-            const finalField = fieldParts[fieldParts.length - 1];
-            current[finalField] = value;
-          }
-        }
-      });
-    }
+    console.log(`Request ${index + 1}: Final request details:`, {
+      method,
+      url: populatedUrl,
+      headers: populatedHeaders,
+      hasBody: !!populatedData,
+      mongoValues
+    });
 
     const fetchOptions: any = {
       method,
@@ -378,6 +566,263 @@ ipcMain.handle('api:executeRequest', async (_, config) => {
       duration,
     };
   }
+});
+
+// New IPC handler for executing multiple requests at once
+ipcMain.handle('api:executeRequests', async (_, configs: any[]) => {
+  console.log('Starting batch request execution...', { numberOfRequests: configs.length });
+  const startTime = Date.now();
+  const results = [];
+
+  try {
+    // Execute all requests concurrently
+    console.log('Preparing to execute requests concurrently...');
+    const promises = configs.map(async (config, index) => {
+      const requestStartTime = Date.now();
+      console.log(`Processing request ${index + 1}/${configs.length}...`);
+      
+      try {
+        const { method = 'GET', url, headers = {}, data, mappedFields, mongoDocument } = config;
+        console.log(`Request ${index + 1} details:`, {
+          method,
+          url,
+          hasMongoDocument: !!mongoDocument,
+          hasMappedFields: Object.keys(mappedFields || {}).length > 0
+        });
+        
+        // Use the provided MongoDB document directly instead of fetching
+        let mongoValues: Record<string, any> = {};
+        if (mongoDocument && Object.keys(mappedFields).length > 0) {
+          console.log(`Request ${index + 1}: Processing MongoDB values...`, {
+            mappedFields,
+            mongoDocument
+          });
+
+          // Convert mappedFields from array to object if needed
+          const mappedFieldsObj = Array.isArray(mappedFields) 
+            ? mappedFields.reduce((acc, field) => {
+                // Keep the full field path as the key
+                acc[field] = field;
+                return acc;
+              }, {} as Record<string, string>)
+            : mappedFields;
+
+          console.log('Processed mapped fields:', mappedFieldsObj);
+
+          mongoValues = Object.entries(mappedFieldsObj).reduce((acc, [curlField, fieldConfig]) => {
+            console.log(`Processing field mapping:`, {
+              curlField,
+              fieldConfig,
+              fieldConfigType: typeof fieldConfig
+            });
+
+            // Handle special values first
+            if (fieldConfig === 'specialValue') {
+              acc[curlField] = crypto.randomUUID();
+              return acc;
+            }
+
+            // Extract the field path from the curl field
+            const fieldParts = curlField.split('.');
+            const isHeaderField = fieldParts[0] === 'header';
+            
+            // Get the value from MongoDB using the last part of the field path
+            let value = mongoDocument;
+            const fieldName = fieldParts[fieldParts.length - 1];
+            
+            // Get the specific field value from the MongoDB document
+            value = mongoDocument[fieldName];
+            
+            console.log(`Extracting field value from MongoDB:`, {
+              curlField,
+              fieldName,
+              value,
+              valueType: typeof value,
+              isHeaderField
+            });
+            
+            acc[curlField] = value;
+            return acc;
+          }, {} as Record<string, any>);
+
+          console.log('Final mongoValues:', mongoValues);
+        }
+
+        // Now populate the request with MongoDB values
+        let populatedUrl = url;
+        let populatedHeaders = { ...headers };
+        let populatedData = data;
+
+        // Replace URL parameters
+        Object.entries(mongoValues).forEach(([field, value]) => {
+          if (field.startsWith('url.')) {
+            const paramName = field.split('.')[1];
+            populatedUrl = populatedUrl.replace(`{${paramName}}`, value?.toString() || '');
+          } else if (field.startsWith('query.')) {
+            // Handle query parameters
+            const urlObj = new URL(populatedUrl);
+            const paramName = field.split('.')[1];
+            urlObj.searchParams.set(paramName, value?.toString() || '');
+            populatedUrl = urlObj.toString();
+          }
+        });
+
+        // Replace header values
+        Object.entries(mongoValues).forEach(([field, value]) => {
+          if (field.startsWith('header.')) {
+            const parts = field.split('.');
+            const headerName = parts[1]; // e.g., 'encodedHeader'
+            const fieldPath = parts.slice(2).join('.'); // e.g., 'email'
+            
+            console.log(`Processing header field:`, {
+              field,
+              parts,
+              headerName,
+              fieldPath,
+              value,
+              valueType: typeof value,
+              originalHeaderValue: populatedHeaders[headerName]
+            });
+
+            const originalValue = populatedHeaders[headerName];
+            const isBase64 = originalValue && /^[A-Za-z0-9+/=]+$/.test(originalValue);
+            
+            console.log(`Header value details:`, {
+              headerName,
+              originalValue,
+              isBase64,
+              value
+            });
+
+            if (isBase64) {
+              try {
+                const decodedValue = atob(originalValue);
+                console.log('Processing base64 header:', {
+                  field,
+                  fieldPath,
+                  value,
+                  decodedValue
+                });
+                
+                const headerObj = JSON.parse(decodedValue);
+                console.log('Original header object:', headerObj);
+                
+                // Update only the specific field in the object
+                const fieldParts = fieldPath.split('.');
+                let currentObj = headerObj;
+                
+                // Navigate to the nested object where we need to update the value
+                for (let i = 0; i < fieldParts.length - 1; i++) {
+                  if (!currentObj[fieldParts[i]]) {
+                    currentObj[fieldParts[i]] = {};
+                  }
+                  currentObj = currentObj[fieldParts[i]];
+                }
+                
+                // Update the specific field with the value from MongoDB
+                const lastField = fieldParts[fieldParts.length - 1];
+                currentObj[lastField] = value;
+                
+                console.log('Updated header object:', {
+                  fieldPath,
+                  newValue: value,
+                  updatedObject: headerObj
+                });
+                
+                // Encode back to base64
+                const newValue = btoa(JSON.stringify(headerObj));
+                populatedHeaders[headerName] = newValue;
+                console.log('Final header value:', {
+                  headerName,
+                  newValue,
+                  decoded: atob(newValue)
+                });
+              } catch (e) {
+                console.error('Error processing base64 header:', {
+                  error: e,
+                  headerName,
+                  fieldPath,
+                  originalValue,
+                  value
+                });
+                // Fallback to direct value if processing fails
+                populatedHeaders[headerName] = value?.toString() || '';
+              }
+            } else {
+              populatedHeaders[headerName] = value?.toString() || '';
+            }
+          }
+        });
+
+        console.log(`Request ${index + 1}: Executing HTTP request...`, {
+          method,
+          url: populatedUrl,
+          headers: populatedHeaders,
+          hasBody: !!populatedData
+        });
+
+        const fetchOptions: any = {
+          method,
+          headers: populatedHeaders,
+        };
+
+        // Only add body for non-GET requests or if we actually have data
+        if (populatedData && method.toUpperCase() !== 'GET') {
+          if (typeof populatedData === 'string') {
+            fetchOptions.body = populatedData;
+          } else {
+            fetchOptions.body = JSON.stringify(populatedData);
+          }
+          
+          if (!populatedHeaders['Content-Type']) {
+            fetchOptions.headers['Content-Type'] = 'application/json';
+          }
+        }
+
+        const response = await fetch(populatedUrl, fetchOptions);
+        const responseBody = await response.text();
+        const duration = Date.now() - requestStartTime;
+
+        console.log(`Request ${index + 1} completed:`, {
+          status: response.status,
+          duration,
+          success: response.ok
+        });
+
+        return {
+          success: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          body: responseBody,
+          duration,
+        };
+      } catch (error) {
+        const duration = Date.now() - requestStartTime;
+        console.error(`Request ${index + 1} failed:`, error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          duration,
+        };
+      }
+    });
+
+    // Wait for all requests to complete
+    console.log('Waiting for all requests to complete...');
+    const requestResults = await Promise.all(promises);
+    results.push(...requestResults);
+    console.log('All requests completed', {
+      totalRequests: results.length,
+      successfulRequests: results.filter(r => r.success).length,
+      failedRequests: results.filter(r => !r.success).length,
+      totalDuration: Date.now() - startTime
+    });
+
+  } catch (error) {
+    console.error('Error executing requests:', error);
+  }
+
+  return results;
 });
 
 // Helm Secrets IPC Handlers

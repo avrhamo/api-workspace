@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld(
     // API Request Execution
     executeRequest: (config: any) =>
       ipcRenderer.invoke('api:executeRequest', config),
+    executeRequests: (configs: any[]) =>
+      ipcRenderer.invoke('api:executeRequests', configs),
     
     // System operations
     isDarkMode: () => 
@@ -91,6 +93,20 @@ contextBridge.exposeInMainWorld(
     // Port Killer API
     killPort: (port: number) => 
       ipcRenderer.invoke('port:kill', port),
+
+    // MongoDB operations
+    mongodb: {
+      initializeBatch: (config: { 
+        database: string; 
+        collection: string; 
+        query?: any; 
+        batchSize?: number; 
+      }) => ipcRenderer.invoke('mongodb:initializeBatch', config),
+      getNextDocument: (batchId: string) =>
+        ipcRenderer.invoke('mongodb:getNextDocument', batchId),
+      closeBatch: (batchId: string) =>
+        ipcRenderer.invoke('mongodb:closeBatch', batchId),
+    },
   }
 );
 

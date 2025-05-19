@@ -13,6 +13,7 @@ import TextCompareTool from './components/tools/text-compare';
 import POJOCreator from './components/tools/pojo-creator';
 import OpenAPIGenerator from './components/tools/openapi-generator';
 import PortKiller from './components/tools/port-killer';
+import WaitingRoom from './components/tools/waiting-room';
 import { useTheme } from './hooks/useTheme';
 import { useState, useEffect } from 'react';
 import { Tab } from '@headlessui/react';
@@ -31,9 +32,11 @@ import {
   CodeBracketSquareIcon,
   DocumentMagnifyingGlassIcon,
   SwatchIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  FaceSmileIcon
 } from '@heroicons/react/24/outline';
 import React from 'react';
+import { useTabShortcuts } from './hooks/useTabShortcuts';
 
 const TOOL_COMPONENTS: Record<string, any> = {
   'base64': Base64Tool,
@@ -50,6 +53,7 @@ const TOOL_COMPONENTS: Record<string, any> = {
   'pojo-creator': POJOCreator,
   'openapi-generator': OpenAPIGenerator,
   'port-killer': PortKiller,
+  'waiting-room': WaitingRoom,
 };
 
 const TOOL_LABELS: Record<string, string> = {
@@ -67,6 +71,7 @@ const TOOL_LABELS: Record<string, string> = {
   'pojo-creator': 'POJO Creator',
   'openapi-generator': 'OpenAPI Generator',
   'port-killer': 'Port Killer',
+  'waiting-room': 'Waiting Room',
 };
 
 const TOOL_ICONS: Record<string, any> = {
@@ -84,6 +89,7 @@ const TOOL_ICONS: Record<string, any> = {
   'pojo-creator': CodeBracketSquareIcon,
   'openapi-generator': SwatchIcon,
   'port-killer': ExclamationTriangleIcon,
+  'waiting-room': FaceSmileIcon,
 };
 
 // Default state for each tool
@@ -322,6 +328,14 @@ const App: React.FC = () => {
       />
     );
   };
+
+  // Add useTabShortcuts hook
+  useTabShortcuts({
+    tabs,
+    selectedTabIndex,
+    onTabChange: handleTabChange,
+    onCloseTab: (index) => closeTab(index, new MouseEvent('click') as any),
+  });
 
   return (
     <Layout

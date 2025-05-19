@@ -46,50 +46,55 @@ export function parseCurl(curl: string): CurlCommand {
     }
   }
 
+  const method = methodMatch ? methodMatch[1].toUpperCase() : 'GET';
   let body = undefined;
-  if (bodyMatch) {
-    try {
-      // Clean up the body content - using group 1 which is the content between quotes
-      let bodyContent = bodyMatch[1];
-      
-      // Then handle escapes
-      bodyContent = bodyContent
-        .replace(/\\n/g, '\n')
-        .replace(/\\"/g, '"')
-        .replace(/\\'/g, "'")
-        .replace(/\\\\/g, '\\')
-        .trim();
 
-      // Validate JSON structure before parsing
-      if (bodyContent.startsWith('{') && bodyContent.endsWith('}')) {
-        try {
-          // Try to parse as JSON
-          body = JSON.parse(bodyContent);
-        } catch (firstError) {
-          // If first attempt fails, try cleaning up common JSON issues
-          const cleanContent = bodyContent
-            .replace(/,\s*}/g, '}')  // Remove trailing commas in objects
-            .replace(/,\s*\]/g, ']') // Remove trailing commas in arrays
-            .replace(/\n\s*/g, '')   // Remove newlines and whitespace
-            .replace(/\r/g, '')      // Remove carriage returns
-            .trim();
+  // Only try to parse body for non-GET requests or if explicitly provided
+  if (method !== 'GET' || bodyMatch) {
+    if (bodyMatch) {
+      try {
+        // Clean up the body content - using group 1 which is the content between quotes
+        let bodyContent = bodyMatch[1];
+        
+        // Then handle escapes
+        bodyContent = bodyContent
+          .replace(/\\n/g, '\n')
+          .replace(/\\"/g, '"')
+          .replace(/\\'/g, "'")
+          .replace(/\\\\/g, '\\')
+          .trim();
 
+        // Validate JSON structure before parsing
+        if (bodyContent.startsWith('{') && bodyContent.endsWith('}')) {
           try {
-            body = JSON.parse(cleanContent);
-          } catch (secondError) {
-            throw new Error('Invalid JSON in request body');
+            // Try to parse as JSON
+            body = JSON.parse(bodyContent);
+          } catch (firstError) {
+            // If first attempt fails, try cleaning up common JSON issues
+            const cleanContent = bodyContent
+              .replace(/,\s*}/g, '}')  // Remove trailing commas in objects
+              .replace(/,\s*\]/g, ']') // Remove trailing commas in arrays
+              .replace(/\n\s*/g, '')   // Remove newlines and whitespace
+              .replace(/\r/g, '')      // Remove carriage returns
+              .trim();
+
+            try {
+              body = JSON.parse(cleanContent);
+            } catch (secondError) {
+              throw new Error('Invalid JSON in request body');
+            }
           }
+        } else {
+          body = bodyContent;
         }
-      } else {
-        body = bodyContent;
+      } catch (e) {
+        throw new Error('Failed to parse request body: ' + (e instanceof Error ? e.message : String(e)));
       }
-    } catch (e) {
-      throw new Error('Failed to parse request body: ' + (e instanceof Error ? e.message : String(e)));
     }
   }
 
   const result = {
-    method: methodMatch ? methodMatch[1].toUpperCase() : 'GET',
+    method,
     url: urlMatch[1],
     headers,
     body
