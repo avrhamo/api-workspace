@@ -188,17 +188,6 @@ export const TestExecutor: React.FC<TestExecutorProps> = ({
       const requests = Array(testConfig.numberOfRequests).fill(null).map((_, index) => {
         // Get the corresponding MongoDB document if we have one
         const batchDoc = batchDocuments.find(doc => doc.index === index);
-        const mappedFieldKey = Object.keys(curlConfig.mappedFields)[0];
-        const mappedField = curlConfig.mappedFields[mappedFieldKey];
-        
-        console.log(`Preparing request ${index + 1}/${testConfig.numberOfRequests}`, {
-          hasMongoDocument: !!batchDoc,
-          mongoDocument: batchDoc?.document,
-          mappedFields: curlConfig.mappedFields,
-          mappedFieldKey,
-          targetField: mappedField.targetField,
-          expectedValue: batchDoc?.document?.[mappedField.targetField]
-        });
         
         // Process the request data
         let processedData = curlConfig.parsedCommand.data;
@@ -214,6 +203,7 @@ export const TestExecutor: React.FC<TestExecutorProps> = ({
           method: curlConfig.parsedCommand.method,
           url: curlConfig.parsedCommand.url,
           headers: curlConfig.parsedCommand.headers,
+          data: processedData,
           mappedFields: curlConfig.mappedFields
         });
 
@@ -221,9 +211,9 @@ export const TestExecutor: React.FC<TestExecutorProps> = ({
         const requestConfig = {
           method: curlConfig.parsedCommand.method || 'GET',
           url: curlConfig.parsedCommand.url || '',
-          headers: { ...curlConfig.parsedCommand.headers } || {},
+          headers: curlConfig.parsedCommand.headers ? { ...curlConfig.parsedCommand.headers } : {},
           data: processedData,
-          mappedFields: curlConfig.mappedFields,
+          mappedFields: curlConfig.mappedFields || {},
           connectionConfig,
           mongoDocument: batchDoc?.document
         };
@@ -232,105 +222,127 @@ export const TestExecutor: React.FC<TestExecutorProps> = ({
           method: requestConfig.method,
           url: requestConfig.url,
           headers: requestConfig.headers,
-          mappedFields: requestConfig.mappedFields
+          data: requestConfig.data,
+          hasMappedFields: Object.keys(requestConfig.mappedFields).length > 0
         });
 
-        // Process mapped fields based on their type
-        if (batchDoc?.document && requestConfig.mappedFields) {
-          console.log('Processing mapped fields for document:', {
-            document: batchDoc.document,
-            mappedFields: requestConfig.mappedFields
-          });
-
-          Object.entries(requestConfig.mappedFields).forEach(([mappedFieldKey, mappedField]) => {
-            const value = batchDoc.document[mappedField.targetField];
-            console.log(`Processing field ${mappedFieldKey}:`, {
-              targetField: mappedField.targetField,
-              value,
-              valueType: typeof value,
-              originalHeaderValue: requestConfig.headers[mappedFieldKey.replace('headers.', '')]
+        // Only process mapped fields if we have any
+        if (Object.keys(requestConfig.mappedFields).length > 0) {
+          const mappedFieldKey = Object.keys(requestConfig.mappedFields)[0];
+          const mappedField = requestConfig.mappedFields[mappedFieldKey];
+          
+          if (mappedField) {
+            console.log(`Processing mapped field:`, {
+              mappedFieldKey,
+              mappedField,
+              hasMongoDocument: !!batchDoc?.document
             });
 
-            if (value) {
-              if (mappedFieldKey.startsWith('url.queryParams.')) {
-                // Handle query parameters
-                const paramName = mappedFieldKey.replace('url.queryParams.', '');
-                const urlObj = new URL(requestConfig.url);
-                urlObj.searchParams.set(paramName, value.toString());
-                requestConfig.url = urlObj.toString();
-                console.log(`Updated URL with query param:`, {
-                  paramName,
+            // Process mapped fields based on their type
+            if (batchDoc?.document) {
+              console.log('Processing mapped fields for document:', {
+                document: batchDoc.document,
+                mappedFields: requestConfig.mappedFields
+              });
+
+              Object.entries(requestConfig.mappedFields).forEach(([mappedFieldKey, mappedField]) => {
+                if (!mappedField) {
+                  console.warn(`Skipping undefined mapped field: ${mappedFieldKey}`);
+                  return;
+                }
+
+                const value = batchDoc.document[mappedField.targetField];
+                console.log(`Processing field ${mappedFieldKey}:`, {
+                  targetField: mappedField.targetField,
                   value,
-                  newUrl: requestConfig.url
-                });
-              } else if (mappedFieldKey.startsWith('header.')) {
-                // Handle headers
-                const parts = mappedFieldKey.split('.');
-                const headerName = parts[1]; // e.g., 'encodedHeader'
-                const fieldPath = parts.slice(2).join('.'); // e.g., 'email'
-                
-                console.log(`Processing header field:`, {
-                  mappedFieldKey,
-                  parts,
-                  headerName,
-                  fieldPath,
-                  value
+                  valueType: typeof value
                 });
 
-                const originalValue = requestConfig.headers[headerName];
-                console.log(`Processing header ${headerName}:`, {
-                  originalValue,
-                  newValue: value,
-                  isBase64: originalValue && /^[A-Za-z0-9+/=]+$/.test(originalValue)
-                });
-
-                if (originalValue && /^[A-Za-z0-9+/=]+$/.test(originalValue)) {
-                  try {
-                    const decodedValue = atob(originalValue);
-                    console.log('Decoded header value:', {
-                      original: originalValue,
-                      decoded: decodedValue
+                if (value) {
+                  if (mappedFieldKey.startsWith('url.queryParams.')) {
+                    // Handle query parameters
+                    const paramName = mappedFieldKey.replace('url.queryParams.', '');
+                    const urlObj = new URL(requestConfig.url);
+                    urlObj.searchParams.set(paramName, value.toString());
+                    requestConfig.url = urlObj.toString();
+                    console.log(`Updated URL with query param:`, {
+                      paramName,
+                      value,
+                      newUrl: requestConfig.url
                     });
+                  } else if (mappedFieldKey.startsWith('header.')) {
+                    // Handle headers
+                    const parts = mappedFieldKey.split('.');
+                    const headerName = parts[1]; // e.g., 'encodedHeader'
+                    const fieldPath = parts.slice(2).join('.'); // e.g., 'email'
                     
-                    const headerObj = JSON.parse(decodedValue);
-                    console.log('Parsed header object:', headerObj);
-                    
-                    // Update the specific field in the object using the field path
-                    headerObj[fieldPath] = value;
-                    console.log('Updated header object:', headerObj);
-                    
-                    // Encode back to base64
-                    const newValue = btoa(JSON.stringify(headerObj));
-                    requestConfig.headers[headerName] = newValue;
-                    console.log('Final header value:', {
-                      headerName,
-                      newValue,
-                      decoded: atob(newValue)
-                    });
-                  } catch (e) {
-                    console.error('Error processing base64 header:', {
-                      error: e,
+                    console.log(`Processing header field:`, {
+                      mappedFieldKey,
+                      parts,
                       headerName,
                       fieldPath,
-                      originalValue,
                       value
                     });
-                    // Fallback to direct value if processing fails
-                    requestConfig.headers[headerName] = value.toString();
+
+                    const originalValue = requestConfig.headers[headerName];
+                    console.log(`Processing header ${headerName}:`, {
+                      originalValue,
+                      newValue: value,
+                      isBase64: originalValue && /^[A-Za-z0-9+/=]+$/.test(originalValue)
+                    });
+
+                    if (originalValue && /^[A-Za-z0-9+/=]+$/.test(originalValue)) {
+                      try {
+                        const decodedValue = atob(originalValue);
+                        console.log('Decoded header value:', {
+                          original: originalValue,
+                          decoded: decodedValue
+                        });
+                        
+                        const headerObj = JSON.parse(decodedValue);
+                        console.log('Parsed header object:', headerObj);
+                        
+                        // Update the specific field in the object using the field path
+                        headerObj[fieldPath] = value;
+                        console.log('Updated header object:', headerObj);
+                        
+                        // Encode back to base64
+                        const newValue = btoa(JSON.stringify(headerObj));
+                        requestConfig.headers[headerName] = newValue;
+                        console.log('Final header value:', {
+                          headerName,
+                          newValue,
+                          decoded: atob(newValue)
+                        });
+                      } catch (e) {
+                        console.error('Error processing base64 header:', {
+                          error: e,
+                          headerName,
+                          fieldPath,
+                          originalValue,
+                          value
+                        });
+                        // Fallback to direct value if processing fails
+                        requestConfig.headers[headerName] = value.toString();
+                      }
+                    } else {
+                      requestConfig.headers[headerName] = value.toString();
+                    }
                   }
-                } else {
-                  requestConfig.headers[headerName] = value.toString();
                 }
-              }
+              });
             }
-          });
+          }
+        } else {
+          console.log('No mapped fields to process, using original request data');
         }
 
         console.log('Final request config:', {
           method: requestConfig.method,
           url: requestConfig.url,
           headers: requestConfig.headers,
-          mappedFields: Object.keys(requestConfig.mappedFields)
+          data: requestConfig.data,
+          hasMappedFields: Object.keys(requestConfig.mappedFields).length > 0
         });
 
         return requestConfig;
@@ -463,8 +475,9 @@ export const TestExecutor: React.FC<TestExecutorProps> = ({
               <span className="ml-2 px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Fast Response</span>
             )}
           </h3>
-          <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg border border-gray-200 dark:border-gray-700">
-            <div className="px-4 py-5 sm:p-6">
+          <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col" style={{ height: 'calc(100vh - 400px)', minHeight: '400px' }}>
+            {/* Summary section - always visible */}
+            <div className="flex-none px-4 py-5 sm:p-6 border-b border-gray-200 dark:border-gray-700">
               <dl className="grid grid-cols-1 gap-x-4 gap-y-8 sm:grid-cols-2">
                 <div className="relative">
                   <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Requests</dt>
@@ -489,6 +502,38 @@ export const TestExecutor: React.FC<TestExecutorProps> = ({
                   </dd>
                 </div>
               </dl>
+            </div>
+
+            {/* Detailed results - scrollable */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                {results.map((result, index) => (
+                  <div key={index} className="px-4 py-4 sm:px-6 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          result.success 
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' 
+                            : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                        }`}>
+                          {result.success ? 'Success' : 'Failed'}
+                        </span>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          Request {index + 1}
+                        </span>
+                      </div>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {result.duration.toFixed(2)}ms
+                      </span>
+                    </div>
+                    {!result.success && result.error && (
+                      <div className="mt-2 text-sm text-red-600 dark:text-red-400">
+                        {result.error}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

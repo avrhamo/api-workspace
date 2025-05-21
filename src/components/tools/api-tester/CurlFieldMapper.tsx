@@ -116,49 +116,23 @@ export const CurlFieldMapper: React.FC<CurlFieldMapperProps> = ({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between pb-4">
-        {onBack && (
-          <button
-            onClick={onBack}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-gray-900"
-          >
-            <ChevronLeftIcon className="w-5 h-5 mr-2" />
-            Back
-          </button>
-        )}
-      </div>
-
-      {/* API Request Info */}
-      <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-        <div className="flex items-center space-x-2">
-          <span className={`px-2 py-1 rounded text-xs font-medium ${
-            parsedCommand.method === 'GET' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
-            parsedCommand.method === 'POST' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
-            parsedCommand.method === 'PUT' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
-            parsedCommand.method === 'DELETE' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
-            'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400'
-          }`}>
-            {parsedCommand.method || 'UNKNOWN'}
-          </span>
-          <span className="text-sm font-mono text-gray-700 dark:text-gray-300">
-            {parsedCommand.url || 'No URL provided'}
-          </span>
+    <div className="h-full flex flex-col">
+      <div className="flex-none">
+        <div className="flex items-center justify-between pb-4">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-gray-900"
+            >
+              <ChevronLeftIcon className="w-5 h-5 mr-2" />
+              Back
+            </button>
+          )}
         </div>
       </div>
 
-      {error && (
-        <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4">
-          <div className="flex">
-            <XCircleIcon className="h-5 w-5 text-red-400" />
-            <div className="ml-3">
-              <p className="text-sm text-red-700 dark:text-red-200">{error}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-6">
+      {/* Scrollable content area */}
+      <div className="flex-1 overflow-y-auto min-h-0 space-y-6 pr-2">
         {/* CURL Analysis Section */}
         <CurlAnalyzer
           curlCommand={parsedCommand.rawCommand}
@@ -180,13 +154,16 @@ export const CurlFieldMapper: React.FC<CurlFieldMapperProps> = ({
         </div>
       </div>
 
-      <div className="flex justify-end pt-4">
-        <button 
-          onClick={handleSubmit}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          Continue
-        </button>
+      {/* Fixed footer */}
+      <div className="flex-none pt-4 border-t border-gray-200 dark:border-gray-700 mt-4">
+        <div className="flex justify-end">
+          <button 
+            onClick={handleSubmit}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Continue
+          </button>
+        </div>
       </div>
     </div>
   );

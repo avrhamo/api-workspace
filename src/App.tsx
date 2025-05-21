@@ -303,10 +303,20 @@ const App: React.FC = () => {
         ...newState,
         lastUpdated: Date.now()
       };
-      return {
+      console.log('[App] handleToolStateChange - BEFORE update:', {
+        tabId,
+        currentTabState: JSON.stringify(currentState),
+        newStateUpdate: JSON.stringify(newState),
+        willUpdateTo: JSON.stringify(updatedState)
+      });
+      const nextState = {
         ...prev,
         [tabId]: updatedState
       };
+      console.log('[App] handleToolStateChange - AFTER update:', {
+        fullTabStates: JSON.stringify(nextState)
+      });
+      return nextState;
     });
   };
 
@@ -317,15 +327,25 @@ const App: React.FC = () => {
       return null;
     }
     
+    // Log the state lookup process
+    console.log('[App] renderTool - State Resolution:', {
+      tabId,
+      existingTabState: JSON.stringify(tabStates[tabId]),
+      defaultToolState: JSON.stringify(DEFAULT_TOOL_STATES[toolId]),
+      willUseState: JSON.stringify(tabStates[tabId] || DEFAULT_TOOL_STATES[toolId] || {})
+    });
+
     // Ensure we have a valid state for this tab
     const currentState = tabStates[tabId] || DEFAULT_TOOL_STATES[toolId] || {};
     
     return (
-      <ToolComponent
-        key={tabId}
-        state={currentState}
-        setState={(newState: Partial<ToolState>) => handleToolStateChange(tabId, newState)}
-      />
+      <div className="h-full flex-1 min-h-0">
+        <ToolComponent
+          key={tabId}
+          state={currentState}
+          setState={(newState: Partial<ToolState>) => handleToolStateChange(tabId, newState)}
+        />
+      </div>
     );
   };
 
@@ -337,13 +357,23 @@ const App: React.FC = () => {
     onCloseTab: (index) => closeTab(index, new MouseEvent('click') as any),
   });
 
+  // Helper: open or select tab for a tool
+  const openOrSelectTab = (toolId: string) => {
+    const existingIndex = tabs.findIndex(tab => tab.toolId === toolId);
+    if (existingIndex !== -1) {
+      setSelectedTabIndex(existingIndex);
+    } else {
+      openNewTab(toolId);
+    }
+  };
+
   return (
     <Layout
       currentTool={currentTool}
-      setCurrentTool={openNewTab}
+      setCurrentTool={openOrSelectTab}
       tabBar={
-        <Tab.Group selectedIndex={selectedTabIndex} onChange={handleTabChange}>
-          <Tab.List className="flex space-x-1 border-b border-gray-200 dark:border-gray-700">
+        <Tab.Group selectedIndex={selectedTabIndex} onChange={handleTabChange} as="div" className="h-full flex flex-col flex-1 min-h-0">
+          <Tab.List className="flex-none flex space-x-1 border-b border-gray-200 dark:border-gray-700">
             {tabs.map((tab, index) => (
               <Tab
                 key={tab.id}
@@ -371,9 +401,12 @@ const App: React.FC = () => {
               </Tab>
             ))}
           </Tab.List>
-          <Tab.Panels className="flex-1">
+          <Tab.Panels className="flex-1 min-h-0 h-full overflow-hidden">
             {tabs.map(tab => (
-              <Tab.Panel key={tab.id} className="h-full">
+              <Tab.Panel 
+                key={tab.id} 
+                className="flex-1 min-h-0 h-full overflow-auto"
+              >
                 {renderTool(tab.toolId, tab.id)}
               </Tab.Panel>
             ))}

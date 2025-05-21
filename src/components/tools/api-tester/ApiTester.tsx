@@ -14,6 +14,12 @@ interface ConnectionConfig {
   query?: string;
 }
 
+interface MappingInfo {
+  targetField: string;
+  type: 'mongodb' | 'fixed' | 'special';
+  value?: string;
+}
+
 interface CurlConfig {
   parsedCommand: {
     rawCommand: string;
@@ -22,7 +28,7 @@ interface CurlConfig {
     headers?: Record<string, string>;
     data?: any;
   };
-  mappedFields: Record<string, string>;
+  mappedFields: Record<string, MappingInfo>;
 }
 
 interface TestConfig {
@@ -39,25 +45,6 @@ interface ApiTesterState {
   availableFields: string[];
 }
 
-const DEFAULT_STATE: ApiTesterState = {
-  step: 1,
-  connectionConfig: {
-    connectionString: 'mongodb://localhost:27017',
-  },
-  curlConfig: {
-    parsedCommand: {
-      rawCommand: ''
-    },
-    mappedFields: {},
-  },
-  testConfig: {
-    numberOfRequests: 1,
-    isAsync: false,
-    batchSize: 100,
-  },
-  availableFields: [],
-};
-
 const STEPS = [
   { number: 1, title: 'Connect', description: 'Configure MongoDB connection' },
   { number: 2, title: 'Select Data', description: 'Choose database and collection' },
@@ -67,31 +54,24 @@ const STEPS = [
 ];
 
 export const ApiTester: React.FC<BaseToolProps> = (props) => {
-  const { state, setState } = useToolState({
-    initialState: DEFAULT_STATE,
-    ...props
-  });
+  console.log('[ApiTester] Component mounted with props:', props);
+  const { state, setState } = useToolState(props);
+  console.log('[ApiTester] Initial state from useToolState:', state);
 
   // Ensure we always have a valid step
   useEffect(() => {
-    if (!state.step || state.step < 1 || state.step > STEPS.length) {
+    if (state && (!state.step || state.step < 1 || state.step > STEPS.length)) {
+      console.log('[ApiTester] Invalid step detected, resetting to 1', state.step);
       setState({ step: 1 });
     }
-  }, [state.step, setState]);
+  }, [state?.step, setState]);
 
-  // Ensure we have the default state if none exists
-  useEffect(() => {
-    if (!state.connectionConfig || !state.curlConfig || !state.testConfig) {
-      setState({
-        ...DEFAULT_STATE,
-        ...state
-      });
-    }
-  }, [state, setState]);
-
-  const currentStep = STEPS.find(s => s.number === state.step) || STEPS[0];
+  const currentStep = state?.step ? STEPS.find(s => s.number === state.step) || STEPS[0] : STEPS[0];
 
   const handleDatabaseSelect = useCallback(async (db: string, collection: string, query?: string) => {
+    console.log('[ApiTester] handleDatabaseSelect called with:', { db, collection, query });
+    if (!state) return;
+
     const newConnectionConfig = {
       ...state.connectionConfig,
       database: db,
@@ -100,20 +80,38 @@ export const ApiTester: React.FC<BaseToolProps> = (props) => {
     };
 
     try {
-      // Fetch a sample document to extract fields
-      const result = await window.electronAPI.findOne(db, collection, query ? JSON.parse(query) : undefined);
-      if (result.success && result.document) {
-        const fields = extractDocumentFields(result.document);
-        setState({
-          connectionConfig: newConnectionConfig,
-          availableFields: fields,
-          step: 3
-        });
+      // Initialize a batch to fetch a sample document
+      const batchResult = await window.electronAPI.mongodb.initializeBatch({
+        database: db,
+        collection: collection,
+        query: query ? JSON.parse(query) : undefined,
+        batchSize: 1
+      });
+
+      if (!batchResult.success || !batchResult.batchId) {
+        throw new Error(batchResult.error || 'Failed to initialize batch');
       }
+
+      // Get the first document
+      const docResult = await window.electronAPI.mongodb.getNextDocument(batchResult.batchId);
+      if (!docResult.success || !docResult.document) {
+        throw new Error(docResult.error || 'Failed to fetch sample document');
+      }
+
+      // Close the batch
+      await window.electronAPI.mongodb.closeBatch(batchResult.batchId);
+
+      const fields = extractDocumentFields(docResult.document);
+      console.log('[ApiTester] Updating state with new fields:', fields);
+      setState({
+        connectionConfig: newConnectionConfig,
+        availableFields: fields,
+        step: 3
+      });
     } catch (error) {
-      console.error('Failed to fetch sample document:', error);
+      console.error('[ApiTester] Failed to fetch sample document:', error);
     }
-  }, [state.connectionConfig, setState]);
+  }, [state, setState]);
 
   // Helper function to extract fields from document
   const extractDocumentFields = useCallback((doc: any): string[] => {
@@ -155,35 +153,62 @@ export const ApiTester: React.FC<BaseToolProps> = (props) => {
   }, []);
 
   const handleConnectionSubmit = useCallback((config: ConnectionConfig) => {
-    setState({
+    console.log('[ApiTester] handleConnectionSubmit called with:', config);
+    const newState = {
+      ...state,
       connectionConfig: config,
       step: 2
-    });
-  }, [setState]);
+    };
+    setState(newState);
+    console.log('[ApiTester] setState called with:', newState);
+  }, [state, setState]);
 
   const handleCommandChange = useCallback((parsedCommand: any) => {
-    setState({
+    console.log('[ApiTester] handleCommandChange called with:', parsedCommand);
+    if (!state) return;
+    const newState = {
+      ...state,
       curlConfig: {
         ...state.curlConfig,
         parsedCommand
       },
       step: 4
-    });
-  }, [state.curlConfig, setState]);
+    };
+    setState(newState);
+    console.log('[ApiTester] setState called with:', newState);
+  }, [state, setState]);
 
-  const handleFieldMap = useCallback((mappedFields: Record<string, string>) => {
-    setState({
+  const handleFieldMap = useCallback((mappedFields: Record<string, MappingInfo>, updatedParsedCommand: {
+    rawCommand: string;
+    method?: string;
+    url?: string;
+    headers?: Record<string, string>;
+    data?: any;
+  }) => {
+    console.log('[ApiTester] handleFieldMap called with:', mappedFields);
+    if (!state) return;
+    const newState = {
+      ...state,
       curlConfig: {
-        ...state.curlConfig,
+        parsedCommand: updatedParsedCommand,
         mappedFields
       },
       step: 5
-    });
-  }, [state.curlConfig, setState]);
+    };
+    setState(newState);
+    console.log('[ApiTester] setState called with:', newState);
+  }, [state, setState]);
 
   const handleStepBack = useCallback((step: number) => {
-    setState({ step });
-  }, [setState]);
+    console.log('[ApiTester] handleStepBack called with:', step);
+    setState({ ...state, step });
+    console.log('[ApiTester] setState called with:', { ...state, step });
+  }, [state, setState]);
+
+  // If state is not initialized yet, show loading
+  if (!state) {
+    return <div>Loading...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-6">
@@ -193,16 +218,25 @@ export const ApiTester: React.FC<BaseToolProps> = (props) => {
           <div className="flex items-center justify-center space-x-4">
             {STEPS.map((s) => (
               <div key={s.number} className="flex items-center">
-                <div className={`
-                  flex items-center justify-center w-10 h-10 rounded-full font-semibold text-sm
-                  transition-all duration-200 ease-in-out
-                  ${state.step === s.number 
-                    ? 'bg-blue-600 text-white ring-2 ring-blue-400 ring-offset-2 dark:ring-offset-gray-900' 
-                    : state.step > s.number 
-                      ? 'bg-green-500 text-white'
-                      : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
-                  }
-                `}>
+                <div 
+                  onClick={() => {
+                    // Only allow going back to previous steps
+                    if (s.number < state.step) {
+                      handleStepBack(s.number);
+                    }
+                  }}
+                  className={`
+                    flex items-center justify-center w-10 h-10 rounded-full font-semibold text-sm
+                    transition-all duration-200 ease-in-out cursor-pointer
+                    ${state.step === s.number 
+                      ? 'bg-blue-600 text-white ring-2 ring-blue-400 ring-offset-2 dark:ring-offset-gray-900' 
+                      : state.step > s.number 
+                        ? 'bg-green-500 text-white'
+                        : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                    }
+                    ${s.number < state.step ? 'hover:bg-blue-500' : 'cursor-not-allowed'}
+                  `}
+                >
                   {state.step > s.number ? (
                     <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />

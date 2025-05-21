@@ -417,7 +417,54 @@ electron_1.ipcMain.handle('api:executeRequest', async (_, config) => {
         let populatedUrl = url;
         let populatedHeaders = { ...headers };
         let populatedData = data;
+        console.log('Initial request data:', {
+            method,
+            url,
+            headers,
+            data,
+            dataType: typeof data
+        });
         // Replace URL parameters
+        console.log('Processing URL parameters:', {
+            url: populatedUrl,
+            mongoValues,
+            hasUrlParams: populatedUrl.includes('{$P')
+        });
+        // First try to match any {$P...} pattern in the URL
+        const matches = populatedUrl.match(/\{\$P[^}]+\}/g);
+        if (matches) {
+            console.log('Found URL parameter matches:', matches);
+            matches.forEach((match) => {
+                // Extract the placeholder ID from the {$P...} format
+                const placeholderId = match.slice(3, -1); // Remove {$P and }
+                console.log('Processing URL parameter:', { match, placeholderId });
+                // Look for a field that maps to this path parameter
+                const mappedField = Object.entries(mongoValues).find(([field, value]) => {
+                    // The field should be a path parameter mapping
+                    return field.startsWith('url.pathParams.') &&
+                        field.endsWith(placeholderId);
+                });
+                if (mappedField) {
+                    const [field, value] = mappedField;
+                    console.log('Found path parameter mapping:', {
+                        match,
+                        placeholderId,
+                        field,
+                        value
+                    });
+                    populatedUrl = populatedUrl.replace(match, value.toString());
+                }
+                else {
+                    console.log('No path parameter mapping found:', {
+                        match,
+                        placeholderId,
+                        availableFields: Object.keys(mongoValues)
+                    });
+                    throw new Error(`No mapping found for path parameter ${match}. Available fields: ${Object.keys(mongoValues).join(', ')}`);
+                }
+            });
+        }
+        // Then handle explicit field mappings
         Object.entries(mongoValues).forEach(([field, value]) => {
             if (field.startsWith('url.')) {
                 const paramName = field.split('.')[1];
@@ -430,98 +477,52 @@ electron_1.ipcMain.handle('api:executeRequest', async (_, config) => {
                 urlObj.searchParams.set(paramName, value?.toString() || '');
                 populatedUrl = urlObj.toString();
             }
-        });
-        // Replace header values
-        Object.entries(mongoValues).forEach(([field, value]) => {
-            if (field.startsWith('header.')) {
-                const parts = field.split('.');
-                const headerName = parts[1]; // e.g., 'encodedHeader'
-                const fieldPath = parts.slice(2).join('.'); // e.g., 'email'
-                console.log(`Processing header field:`, {
-                    field,
-                    parts,
-                    headerName,
-                    fieldPath,
-                    value,
-                    valueType: typeof value,
-                    originalHeaderValue: populatedHeaders[headerName]
-                });
-                const originalValue = populatedHeaders[headerName];
-                const isBase64 = originalValue && /^[A-Za-z0-9+/=]+$/.test(originalValue);
-                console.log(`Header value details:`, {
-                    headerName,
-                    originalValue,
-                    isBase64,
-                    value
-                });
-                if (isBase64) {
+            else if (field.startsWith('body.')) {
+                // Handle body fields
+                if (!populatedData) {
+                    populatedData = {};
+                }
+                // Convert string data to object if needed
+                if (typeof populatedData === 'string') {
                     try {
-                        const decodedValue = atob(originalValue);
-                        console.log('Processing header field:', {
-                            field,
-                            fieldPath,
-                            value,
-                            originalValue: decodedValue
-                        });
-                        const headerObj = JSON.parse(decodedValue);
-                        console.log('Original header object:', headerObj);
-                        // Update only the specific field in the object
-                        const fieldParts = fieldPath.split('.');
-                        let currentObj = headerObj;
-                        // Navigate to the nested object where we need to update the value
-                        for (let i = 0; i < fieldParts.length - 1; i++) {
-                            if (!currentObj[fieldParts[i]]) {
-                                currentObj[fieldParts[i]] = {};
-                            }
-                            currentObj = currentObj[fieldParts[i]];
-                        }
-                        // Update the specific field with just the value, not the entire document
-                        const lastField = fieldParts[fieldParts.length - 1];
-                        currentObj[lastField] = value;
-                        console.log('Updated header object:', {
-                            fieldPath,
-                            newValue: value,
-                            updatedObject: headerObj
-                        });
-                        // Encode back to base64
-                        const newValue = btoa(JSON.stringify(headerObj));
-                        populatedHeaders[headerName] = newValue;
-                        console.log('Final header value:', {
-                            headerName,
-                            newValue,
-                            decoded: atob(newValue)
-                        });
+                        populatedData = JSON.parse(populatedData);
                     }
                     catch (e) {
-                        console.error('Error processing base64 header:', {
-                            error: e,
-                            headerName,
-                            fieldPath,
-                            originalValue,
-                            value
-                        });
-                        // Fallback to direct value if processing fails
-                        populatedHeaders[headerName] = value?.toString() || '';
+                        console.error('Error parsing body data:', e);
+                        populatedData = {};
                     }
                 }
-                else {
-                    populatedHeaders[headerName] = value?.toString() || '';
+                // Navigate to the correct location in the body object
+                const fieldParts = field.split('.').slice(1); // Remove 'body' prefix
+                let currentObj = populatedData;
+                // Navigate to the nested object where we need to update the value
+                for (let i = 0; i < fieldParts.length - 1; i++) {
+                    if (!currentObj[fieldParts[i]]) {
+                        currentObj[fieldParts[i]] = {};
+                    }
+                    currentObj = currentObj[fieldParts[i]];
                 }
+                // Update the specific field
+                const lastField = fieldParts[fieldParts.length - 1];
+                currentObj[lastField] = value;
+                console.log('Updated body data:', {
+                    field,
+                    value,
+                    updatedBody: populatedData
+                });
             }
         });
-        console.log(`Request ${index + 1}: Final request details:`, {
-            method,
-            url: populatedUrl,
-            headers: populatedHeaders,
-            hasBody: !!populatedData,
-            mongoValues
-        });
+        console.log('Final URL after parameter replacement:', populatedUrl);
         const fetchOptions = {
             method,
             headers: populatedHeaders,
         };
         // Only add body for non-GET requests or if we actually have data
         if (populatedData && method.toUpperCase() !== 'GET') {
+            console.log('Preparing request body:', {
+                data: populatedData,
+                dataType: typeof populatedData
+            });
             if (typeof populatedData === 'string') {
                 fetchOptions.body = populatedData;
             }
@@ -532,6 +533,13 @@ electron_1.ipcMain.handle('api:executeRequest', async (_, config) => {
                 fetchOptions.headers['Content-Type'] = 'application/json';
             }
         }
+        console.log('Final fetch options:', {
+            method: fetchOptions.method,
+            headers: fetchOptions.headers,
+            hasBody: !!fetchOptions.body,
+            bodyLength: fetchOptions.body ? fetchOptions.body.length : 0,
+            bodyPreview: fetchOptions.body ? fetchOptions.body.substring(0, 200) + '...' : undefined
+        });
         const response = await (0, node_fetch_1.default)(populatedUrl, fetchOptions);
         const responseBody = await response.text();
         const duration = Date.now() - startTime;
@@ -598,10 +606,30 @@ electron_1.ipcMain.handle('api:executeRequests', async (_, configs) => {
                             acc[curlField] = crypto_1.default.randomUUID();
                             return acc;
                         }
+                        // Handle fixed values
+                        if (typeof fieldConfig === 'object' && fieldConfig.type === 'fixed') {
+                            console.log(`Using fixed value:`, {
+                                curlField,
+                                fixedValue: fieldConfig.value
+                            });
+                            acc[curlField] = fieldConfig.value;
+                            return acc;
+                        }
+                        // Handle MongoDB fields
+                        if (typeof fieldConfig === 'object' && fieldConfig.type === 'mongodb') {
+                            const targetField = fieldConfig.targetField;
+                            console.log(`Extracting MongoDB field value:`, {
+                                curlField,
+                                targetField,
+                                value: mongoDocument[targetField]
+                            });
+                            acc[curlField] = mongoDocument[targetField];
+                            return acc;
+                        }
                         // Extract the field path from the curl field
                         const fieldParts = curlField.split('.');
                         const isHeaderField = fieldParts[0] === 'header';
-                        // Get the value from MongoDB using the last part of the field path
+                        // Get the value from MongoDB using the targetField
                         let value = mongoDocument;
                         const fieldName = fieldParts[fieldParts.length - 1];
                         // Get the specific field value from the MongoDB document
@@ -623,6 +651,46 @@ electron_1.ipcMain.handle('api:executeRequests', async (_, configs) => {
                 let populatedHeaders = { ...headers };
                 let populatedData = data;
                 // Replace URL parameters
+                console.log('Processing URL parameters:', {
+                    url: populatedUrl,
+                    mongoValues,
+                    hasUrlParams: populatedUrl.includes('{$P')
+                });
+                // First try to match any {$P...} pattern in the URL
+                const matches = populatedUrl.match(/\{\$P[^}]+\}/g);
+                if (matches) {
+                    console.log('Found URL parameter matches:', matches);
+                    matches.forEach((match) => {
+                        // Extract the placeholder ID from the {$P...} format
+                        const placeholderId = match.slice(3, -1); // Remove {$P and }
+                        console.log('Processing URL parameter:', { match, placeholderId });
+                        // Look for a field that maps to this path parameter
+                        const mappedField = Object.entries(mongoValues).find(([field, value]) => {
+                            // The field should be a path parameter mapping
+                            return field.startsWith('url.pathParams.') &&
+                                field.endsWith(placeholderId);
+                        });
+                        if (mappedField) {
+                            const [field, value] = mappedField;
+                            console.log('Found path parameter mapping:', {
+                                match,
+                                placeholderId,
+                                field,
+                                value
+                            });
+                            populatedUrl = populatedUrl.replace(match, value.toString());
+                        }
+                        else {
+                            console.log('No path parameter mapping found:', {
+                                match,
+                                placeholderId,
+                                availableFields: Object.keys(mongoValues)
+                            });
+                            throw new Error(`No mapping found for path parameter ${match}. Available fields: ${Object.keys(mongoValues).join(', ')}`);
+                        }
+                    });
+                }
+                // Then handle explicit field mappings
                 Object.entries(mongoValues).forEach(([field, value]) => {
                     if (field.startsWith('url.')) {
                         const paramName = field.split('.')[1];
@@ -635,7 +703,42 @@ electron_1.ipcMain.handle('api:executeRequests', async (_, configs) => {
                         urlObj.searchParams.set(paramName, value?.toString() || '');
                         populatedUrl = urlObj.toString();
                     }
+                    else if (field.startsWith('body.')) {
+                        // Handle body fields
+                        if (!populatedData) {
+                            populatedData = {};
+                        }
+                        // Convert string data to object if needed
+                        if (typeof populatedData === 'string') {
+                            try {
+                                populatedData = JSON.parse(populatedData);
+                            }
+                            catch (e) {
+                                console.error('Error parsing body data:', e);
+                                populatedData = {};
+                            }
+                        }
+                        // Navigate to the correct location in the body object
+                        const fieldParts = field.split('.').slice(1); // Remove 'body' prefix
+                        let currentObj = populatedData;
+                        // Navigate to the nested object where we need to update the value
+                        for (let i = 0; i < fieldParts.length - 1; i++) {
+                            if (!currentObj[fieldParts[i]]) {
+                                currentObj[fieldParts[i]] = {};
+                            }
+                            currentObj = currentObj[fieldParts[i]];
+                        }
+                        // Update the specific field
+                        const lastField = fieldParts[fieldParts.length - 1];
+                        currentObj[lastField] = value;
+                        console.log('Updated body data:', {
+                            field,
+                            value,
+                            updatedBody: populatedData
+                        });
+                    }
                 });
+                console.log('Final URL after parameter replacement:', populatedUrl);
                 // Replace header values
                 Object.entries(mongoValues).forEach(([field, value]) => {
                     if (field.startsWith('header.')) {
@@ -718,7 +821,9 @@ electron_1.ipcMain.handle('api:executeRequests', async (_, configs) => {
                     method,
                     url: populatedUrl,
                     headers: populatedHeaders,
-                    hasBody: !!populatedData
+                    hasBody: !!populatedData,
+                    bodyData: populatedData,
+                    bodyType: typeof populatedData
                 });
                 const fetchOptions = {
                     method,
@@ -726,16 +831,32 @@ electron_1.ipcMain.handle('api:executeRequests', async (_, configs) => {
                 };
                 // Only add body for non-GET requests or if we actually have data
                 if (populatedData && method.toUpperCase() !== 'GET') {
+                    console.log(`Request ${index + 1}: Preparing body data:`, {
+                        originalData: populatedData,
+                        dataType: typeof populatedData
+                    });
                     if (typeof populatedData === 'string') {
                         fetchOptions.body = populatedData;
+                        console.log(`Request ${index + 1}: Using string body:`, populatedData);
                     }
                     else {
-                        fetchOptions.body = JSON.stringify(populatedData);
+                        const stringifiedBody = JSON.stringify(populatedData);
+                        fetchOptions.body = stringifiedBody;
+                        console.log(`Request ${index + 1}: Using JSON body:`, stringifiedBody);
                     }
                     if (!populatedHeaders['Content-Type']) {
                         fetchOptions.headers['Content-Type'] = 'application/json';
                     }
                 }
+                else {
+                    console.log(`Request ${index + 1}: No body data to send`);
+                }
+                console.log(`Request ${index + 1}: Final fetch options:`, {
+                    method: fetchOptions.method,
+                    headers: fetchOptions.headers,
+                    hasBody: !!fetchOptions.body,
+                    bodyLength: fetchOptions.body ? fetchOptions.body.length : 0
+                });
                 const response = await (0, node_fetch_1.default)(populatedUrl, fetchOptions);
                 const responseBody = await response.text();
                 const duration = Date.now() - requestStartTime;
