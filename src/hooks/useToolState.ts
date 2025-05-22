@@ -1,74 +1,39 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback } from 'react';
 import { BaseToolState, BaseToolProps } from '../components/tools/types';
 
-interface UseToolStateProps extends BaseToolProps {
-  initialState?: BaseToolState;
-}
+// No initialState prop needed here anymore if App.tsx handles defaults.
+// interface UseToolStateProps extends BaseToolProps {} // props already has state & setState
 
-export function useToolState(props: UseToolStateProps) {
-  const prevStateRef = useRef<BaseToolState | null>(null);
-  
-  // Initialize state with props.state or initialState, ensuring we preserve all existing state
-  const [localState, setLocalState] = useState<BaseToolState>(() => {
-    const initialState = props.state || props.initialState || {};
-    const newState = {
-      ...initialState,
-      lastUpdated: Date.now()
-    };
-    prevStateRef.current = newState;
-    return newState;
-  });
+export function useToolState(props: BaseToolProps) {
+  const { state: stateFromParent, setState: setParentState } = props;
 
-  // Update local state when props.state changes
-  useEffect(() => {
-    if (props.state && JSON.stringify(props.state) !== JSON.stringify(prevStateRef.current)) {
-      setLocalState(prevState => {
-        const mergedState = {
-          ...prevState,
-          ...props.state,
-          lastUpdated: Date.now()
-        };
-        prevStateRef.current = mergedState;
-        return mergedState;
-      });
-    }
-  }, [props.state]);
+  // The state is directly from the parent (App.tsx)
+  // No internal useState or useEffect for synchronization needed here.
 
-  // Update parent state when local state changes
-  useEffect(() => {
-    if (JSON.stringify(localState) !== JSON.stringify(prevStateRef.current)) {
-      prevStateRef.current = localState;
-      props.setState(localState);
-    }
-  }, [localState, props.setState]);
+  const updateState = useCallback((newStateUpdate: Partial<BaseToolState>) => {
+    // The tool wants to update its state.
+    // We tell App.tsx to merge this partial update.
+    // App.tsx's handleToolStateChange is responsible for the actual merge.
+    // It will create a new state object in App.tsx.
+    setParentState(newStateUpdate); // Pass the PARTIAL update
+  }, [setParentState]); // setParentState from App.tsx should be stable
 
-  // Function to update state
-  const updateState = useCallback((newState: Partial<BaseToolState>) => {
-    setLocalState(prevState => {
-      const updatedState = {
-        ...prevState,
-        ...newState,
-        lastUpdated: Date.now()
-      };
-      prevStateRef.current = updatedState;
-      return updatedState;
-    });
-  }, []);
-
-  // Function to get a specific state value
+  // getStateValue and setStateValue might need adjustment if we no longer
+  // have a 'localState' that's guaranteed to be an object.
+  // However, stateFromParent should always be an object if App.tsx manages it well.
   const getStateValue = useCallback((key: string) => {
-    return localState[key];
-  }, [localState]);
+    return stateFromParent ? stateFromParent[key] : undefined;
+  }, [stateFromParent]);
 
-  // Function to set a specific state value
   const setStateValue = useCallback((key: string, value: any) => {
+    // This creates a partial update object { [key]: value }
     updateState({ [key]: value });
   }, [updateState]);
 
   return {
-    state: localState,
-    setState: updateState,
+    state: stateFromParent || {}, // Provide the state from parent, or an empty object if undefined
+    setState: updateState,     // This will call App.tsx's merger
     getStateValue,
-    setStateValue
+    setStateValue,
   };
 } 

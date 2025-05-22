@@ -242,10 +242,16 @@ const App: React.FC = () => {
     // Initialize state for the new tab if it doesn't exist
     setTabStates(prev => {
       if (!prev[newTab.id]) {
+        // Ensure DEFAULT_TOOL_STATES[toolId] exists before cloning
+        const defaultStateForTool = DEFAULT_TOOL_STATES[toolId];
+        const initialState = defaultStateForTool 
+          ? JSON.parse(JSON.stringify(defaultStateForTool)) 
+          : {};
+
         return {
           ...prev,
           [newTab.id]: {
-            ...DEFAULT_TOOL_STATES[toolId],
+            ...initialState,
             lastUpdated: Date.now()
           }
         };
@@ -297,6 +303,33 @@ const App: React.FC = () => {
 
   const handleToolStateChange = (tabId: string, newState: Partial<ToolState>) => {
     setTabStates(prev => {
+      const currentToolIdForTab = tabs.find(t => t.id === tabId)?.toolId;
+
+      // Enhanced logging for api-tester state changes
+      if (currentToolIdForTab === 'api-tester') {
+        console.log('[App] handleToolStateChange for api-tester:', {
+          tabId,
+          newStateReceived: JSON.stringify(newState),
+          currentStateInAppBeforeMerge: JSON.stringify(prev[tabId])
+        });
+
+        // Check if newState looks like a complete default state for api-tester
+        const apiTesterDefault = DEFAULT_TOOL_STATES['api-tester'];
+        if (newState &&
+            newState.step === apiTesterDefault.step &&
+            JSON.stringify(newState.connectionConfig) === JSON.stringify(apiTesterDefault.connectionConfig) &&
+            JSON.stringify(newState.curlConfig) === JSON.stringify(apiTesterDefault.curlConfig) &&
+            JSON.stringify(newState.testConfig) === JSON.stringify(apiTesterDefault.testConfig) &&
+            JSON.stringify(newState.availableFields) === JSON.stringify(apiTesterDefault.availableFields)) {
+          console.warn('[App] handleToolStateChange: newState for api-tester tab matches FULL DEFAULT state.', {
+            tabId,
+            newState,
+            currentTabStateInApp: prev[tabId]
+          });
+          // console.trace(); // Uncomment for a stack trace if needed
+        }
+      }
+
       const currentState = prev[tabId] || {};
       const updatedState = {
         ...currentState,
@@ -331,12 +364,17 @@ const App: React.FC = () => {
     console.log('[App] renderTool - State Resolution:', {
       tabId,
       existingTabState: JSON.stringify(tabStates[tabId]),
-      defaultToolState: JSON.stringify(DEFAULT_TOOL_STATES[toolId]),
-      willUseState: JSON.stringify(tabStates[tabId] || DEFAULT_TOOL_STATES[toolId] || {})
+      defaultToolStateForLog: JSON.stringify(DEFAULT_TOOL_STATES[toolId]), // Keep original for logging comparison
+      willUseState: JSON.stringify(tabStates[tabId] || (DEFAULT_TOOL_STATES[toolId] ? JSON.parse(JSON.stringify(DEFAULT_TOOL_STATES[toolId])) : {}))
     });
 
     // Ensure we have a valid state for this tab
-    const currentState = tabStates[tabId] || DEFAULT_TOOL_STATES[toolId] || {};
+    // Use deep clone for default state fallback to prevent shared references
+    const defaultStateForTool = DEFAULT_TOOL_STATES[toolId];
+    const initialStateFallback = defaultStateForTool 
+        ? JSON.parse(JSON.stringify(defaultStateForTool)) 
+        : {};
+    const currentState = tabStates[tabId] || initialStateFallback;
     
     return (
       <div className="h-full flex-1 min-h-0">
