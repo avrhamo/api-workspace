@@ -94,6 +94,14 @@ const TOOL_ICONS: Record<string, any> = {
 
 // Default state for each tool
 const DEFAULT_TOOL_STATES: Record<string, any> = {
+  'base64': {
+    mode: 'encode',
+    input: '',
+    output: '',
+    error: null,
+    copied: null,
+    editorState: undefined, // Or specific default editor state if needed
+  },
   'api-tester': {
     step: 1,
     connectionConfig: {

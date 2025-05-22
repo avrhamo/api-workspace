@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MonacoEditor from '../../common/editor/MonacoEditor';
-import { DocumentArrowDownIcon, ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { DocumentArrowDownIcon, ChevronDownIcon, ChevronRightIcon, CloudArrowDownIcon, FolderOpenIcon } from '@heroicons/react/24/outline';
 import { FaJava } from 'react-icons/fa';
 import JSZip from 'jszip';
 import { useTheme } from '../../../hooks/useTheme';
@@ -121,6 +121,10 @@ const POJOCreator: React.FC<POJOCreatorProps> = ({ state, setState, editorHeight
   const [inputTouched, setInputTouched] = useState(false);
   const [collapseTimeout, setCollapseTimeout] = useState<NodeJS.Timeout | null>(null);
   const monacoRef = useRef<any>(null);
+  const [isSaving, setIsSaving] = useState<string | null>(null); // To track which file is being saved
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isSavingAll, setIsSavingAll] = useState(false);
+  const [saveAllMessage, setSaveAllMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string; details?: string } | null>(null);
 
   // Generate classes when input changes
   useEffect(() => {
@@ -164,20 +168,84 @@ const POJOCreator: React.FC<POJOCreatorProps> = ({ state, setState, editorHeight
     }
   }, [theme]);
 
-  // Save all files as zip
-  const handleSaveAll = async () => {
-    if (!state.generatedFiles || Object.keys(state.generatedFiles).length === 0) return;
-    const zip = new JSZip();
-    Object.entries(state.generatedFiles).forEach(([fileName, code]) => {
-      zip.file(fileName, code);
-    });
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${state.className}_pojos.zip`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // Function to save a single file using Electron's dialog
+  const handleSaveFile = async (fileName: string, content: string) => {
+    if (!window.electronAPI || !window.electronAPI.saveFile) {
+      console.error('Electron saveFile API not found. Make sure it is exposed in your preload script.');
+      setSaveMessage({ type: 'error', text: 'File saving feature not available.' });
+      setTimeout(() => setSaveMessage(null), 3000);
+      return;
+    }
+    setIsSaving(fileName);
+    setSaveMessage(null);
+    try {
+      // Suggest a default path, e.g., in user's documents or last used path
+      // For simplicity, just using fileName for now as defaultPath suggestion
+      const result = await window.electronAPI.saveFile(fileName, content);
+      if (result.success) {
+        console.log('File saved successfully:', result.filePath);
+        setSaveMessage({ type: 'success', text: `File saved: ${result.filePath}` });
+      } else if (result.canceled) {
+        console.log('File save was canceled.');
+        // Optionally show a message for cancellation
+      } else {
+        console.error('Failed to save file:', result.error);
+        setSaveMessage({ type: 'error', text: `Error saving file: ${result.error || 'Unknown error'}` });
+      }
+    } catch (error: any) {
+      console.error('Error calling saveFile API:', error);
+      setSaveMessage({ type: 'error', text: `API Error: ${error.message || 'Failed to initiate save'}` });
+    } finally {
+      setIsSaving(null);
+      // Clear message after a few seconds, unless it's an error the user should see longer
+      if (saveMessage?.type === 'success' || saveMessage === null) {
+         setTimeout(() => setSaveMessage(null), 3000);
+      }
+    }
+  };
+
+  // Function to save all files to a selected directory
+  const handleSaveAllFiles = async () => {
+    if (!window.electronAPI || !window.electronAPI.saveFilesToDirectory) {
+      console.error('Electron saveFilesToDirectory API not found.');
+      setSaveAllMessage({ type: 'error', text: 'Save All feature not available.' });
+      setTimeout(() => setSaveAllMessage(null), 3000);
+      return;
+    }
+    if (!state.generatedFiles || Object.keys(state.generatedFiles).length === 0) {
+      setSaveAllMessage({ type: 'info', text: 'No files to save.' });
+      setTimeout(() => setSaveAllMessage(null), 3000);
+      return;
+    }
+
+    setIsSavingAll(true);
+    setSaveAllMessage(null);
+
+    const filesToSave = Object.entries(state.generatedFiles).map(([fileName, content]) => ({ fileName, content }));
+
+    try {
+      const result = await window.electronAPI.saveFilesToDirectory(filesToSave);
+      if (result.success) {
+        setSaveAllMessage({ type: 'success', text: `${result.count || 0} files saved to: ${result.directoryPath}` });
+      } else if (result.canceled) {
+        // No message needed for cancellation, or a subtle one
+        console.log('Save all files was canceled.');
+      } else {
+        let errorText = result.error || 'Failed to save all files.';
+        if (result.errors && result.errors.length > 0) {
+          errorText += ` (${result.errors.length} individual errors)`;
+          console.error('Individual file save errors:', result.errors);
+        }
+        setSaveAllMessage({ type: 'error', text: errorText, details: JSON.stringify(result.errors) });
+      }
+    } catch (error: any) {
+      console.error('Error calling saveFilesToDirectory API:', error);
+      setSaveAllMessage({ type: 'error', text: `API Error: ${error.message || 'Failed to initiate save all'}` });
+    } finally {
+      setIsSavingAll(false);
+      // Clear message after a few seconds
+      setTimeout(() => setSaveAllMessage(null), 5000);
+    }
   };
 
   const fileList = Object.keys(state.generatedFiles || {});
@@ -251,36 +319,36 @@ const POJOCreator: React.FC<POJOCreatorProps> = ({ state, setState, editorHeight
             </div>
             <div className="mb-2">
               <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Options</h3>
-              <div className="flex space-x-4">
-                <label className="inline-flex items-center">
-                  <input
-                    type="checkbox"
-                    className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                    checked={state.options.useLombok}
-                    onChange={(e) => setState({ options: { ...state.options, useLombok: e.target.checked } })}
-                  />
-                  <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Use Lombok</span>
-                </label>
-                <label className="inline-flex items-center">
-                  <input
-                    type="checkbox"
-                    className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                    checked={state.options.useJackson}
-                    onChange={(e) => setState({ options: { ...state.options, useJackson: e.target.checked } })}
-                  />
-                  <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Use Jackson</span>
-                </label>
-                <label className="inline-flex items-center">
-                  <input
-                    type="checkbox"
-                    className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                    checked={state.options.useValidation}
-                    onChange={(e) => setState({ options: { ...state.options, useValidation: e.target.checked } })}
-                  />
-                  <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Use Validation</span>
-                </label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                {Object.keys(state.options).map((optionKey) => (
+                  <label key={optionKey} className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="rounded text-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600"
+                      checked={state.options[optionKey as keyof POJOState['options']]}
+                      onChange={(e) =>
+                        setState({
+                          options: {
+                            ...state.options,
+                            [optionKey]: e.target.checked,
+                          },
+                        })
+                      }
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      {optionKey === 'useLombok' ? 'Use Lombok' : 
+                       optionKey === 'useJackson' ? 'Use Jackson Annotations' :
+                       optionKey === 'useValidation' ? 'Use Validation Annotations' : optionKey}
+                    </span>
+                  </label>
+                ))}
               </div>
             </div>
+            {state.error && (
+              <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-md">
+                <p className="text-sm text-red-700 dark:text-red-200">{state.error}</p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -293,13 +361,20 @@ const POJOCreator: React.FC<POJOCreatorProps> = ({ state, setState, editorHeight
               {state.selectedFile || 'No file selected'}
             </label>
             <button
-              onClick={handleSaveAll}
-              disabled={fileList.length === 0}
+              onClick={handleSaveAllFiles}
+              disabled={isSavingAll || fileList.length === 0}
               className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Save all Java files as zip"
+              title="Save all generated files to a directory"
             >
-              <DocumentArrowDownIcon className="w-4 h-4 mr-1" />
-              Save All
+              {isSavingAll ? (
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              ) : (
+                <DocumentArrowDownIcon className="w-4 h-4 mr-1" />
+              )}
+              Save All Files
             </button>
           </div>
           <div className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md overflow-auto min-h-0" style={{ height: editorHeight }}>
@@ -315,20 +390,26 @@ const POJOCreator: React.FC<POJOCreatorProps> = ({ state, setState, editorHeight
               }}
             />
           </div>
-          {state.error && (
-            <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-md mt-2">
-              {state.error}
-            </div>
-          )}
         </div>
         {/* Right: File Explorer as grid */}
         <div className="w-[32rem] flex flex-col p-4 border-l border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 overflow-y-auto">
-          <div className="font-semibold mb-2 text-gray-700 dark:text-gray-200">Files</div>
+          <div className="font-semibold mb-2 text-gray-700 dark:text-gray-200">Generated Files</div>
+          {saveMessage && (
+            <div className={`p-2 mb-2 rounded-md text-sm ${saveMessage.type === 'success' ? 'bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200' : 'bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-200'}`}>
+              {saveMessage.text}
+            </div>
+          )}
+          {saveAllMessage && (
+            <div className={`p-2 mb-2 rounded-md text-sm ${saveAllMessage.type === 'success' ? 'bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200' : saveAllMessage.type === 'error' ? 'bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-200' : 'bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200'}`}>
+              {saveAllMessage.text}
+              {saveAllMessage.details && <pre className="mt-1 text-xs whitespace-pre-wrap">{saveAllMessage.details}</pre>}
+            </div>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 overflow-y-auto">
             {fileList.map(fileName => (
               <div
                 key={fileName}
-                className={`flex flex-col items-center gap-2 p-4 rounded cursor-pointer transition-colors ${state.selectedFile === fileName ? 'bg-blue-100 dark:bg-blue-800' : 'hover:bg-gray-200 dark:hover:bg-gray-800'}`}
+                className={`relative flex flex-col items-center gap-2 p-4 rounded cursor-pointer transition-colors ${state.selectedFile === fileName ? 'bg-blue-100 dark:bg-blue-800' : 'hover:bg-gray-200 dark:hover:bg-gray-800'}`}
                 onClick={() => setState({ selectedFile: fileName })}
                 onMouseEnter={() => setHoveredFile(fileName)}
                 onMouseLeave={() => setHoveredFile(null)}
@@ -339,6 +420,26 @@ const POJOCreator: React.FC<POJOCreatorProps> = ({ state, setState, editorHeight
                 <span className="truncate max-w-[120px] text-xs text-center font-medium text-black dark:text-white">
                   {fileName}
                 </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent li onClick from firing
+                    handleSaveFile(fileName, state.generatedFiles[fileName]);
+                  }}
+                  disabled={isSaving === fileName}
+                  className={`absolute top-1 right-1 p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-700 disabled:opacity-50
+                    ${state.selectedFile === fileName ? 'text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-700' : 'text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400'}`
+                  }
+                  title={`Save ${fileName}`}
+                >
+                  {isSaving === fileName ? (
+                    <svg className="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <FolderOpenIcon className="w-5 h-5" /> // Or CloudArrowDownIcon
+                  )}
+                </button>
               </div>
             ))}
           </div>

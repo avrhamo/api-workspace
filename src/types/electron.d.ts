@@ -34,7 +34,24 @@ export interface ElectronAPI {
   // File operations
   readFile: (filePath: string) => Promise<{ success: boolean; content?: number[]; error?: string }>;
   writeFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
-  saveFile: (data: { content: string; path: string; fileName: string }) => Promise<{ success: boolean; filePath?: string; error?: string }>;
+  
+  // Modified saveFile for general purpose "Save As" dialog
+  saveFile: (defaultPath: string, content: string) => Promise<{
+    success: boolean;
+    filePath?: string;
+    error?: string;
+    canceled?: boolean; // Added for consistency
+  }>;
+
+  // New: For saving multiple files to a selected directory
+  saveFilesToDirectory: (files: Array<{ fileName: string, content: string }>) => Promise<{
+    success: boolean;
+    directoryPath?: string;
+    count?: number;       // Number of files successfully saved
+    error?: string;       // General error message
+    errors?: Array<{fileName: string, error: string}>; // Specific errors for individual files
+    canceled?: boolean;
+  }>;
 
   // Helm Secrets
   listGpgKeys: () => Promise<{ success: boolean; keys?: any[]; error?: string }>;
