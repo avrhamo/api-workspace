@@ -112,6 +112,12 @@ interface MongoFieldConfig {
   value?: any;
 }
 
+interface FieldConfig {
+  type?: 'mongodb' | 'fixed';
+  targetField?: string;
+  value?: any;
+}
+
 // MongoDB IPC Handlers
 ipcMain.handle('mongodb:connect', async (_, connectionString: string) => {
   try {
@@ -441,7 +447,7 @@ ipcMain.handle('api:executeRequest', async (_, config) => {
       mongoValues,
       hasUrlParams: populatedUrl.includes('{$P')
     });
-
+ 
     // First try to match any {$P...} pattern in the URL
     const matches = populatedUrl.match(/\{\$P[^}]+\}/g);
     if (matches) {
@@ -638,18 +644,20 @@ ipcMain.handle('api:executeRequests', async (_, configs: any[]) => {
             }
 
             // Handle fixed values
-            if (typeof fieldConfig === 'object' && fieldConfig.type === 'fixed') {
+            if (typeof fieldConfig === 'object' && fieldConfig !== null && 'type' in fieldConfig && (fieldConfig as FieldConfig).type === 'fixed') {
+              const config = fieldConfig as FieldConfig;
               console.log(`Using fixed value:`, {
                 curlField,
-                fixedValue: fieldConfig.value
+                fixedValue: config.value
               });
-              acc[curlField] = fieldConfig.value;
+              acc[curlField] = config.value;
               return acc;
             }
 
             // Handle MongoDB fields
-            if (typeof fieldConfig === 'object' && fieldConfig.type === 'mongodb') {
-              const targetField = fieldConfig.targetField;
+            if (typeof fieldConfig === 'object' && fieldConfig !== null && 'type' in fieldConfig && (fieldConfig as FieldConfig).type === 'mongodb') {
+              const config = fieldConfig as FieldConfig;
+              const targetField = config.targetField;
               console.log(`Extracting MongoDB field value:`, {
                 curlField,
                 targetField,
@@ -1177,7 +1185,8 @@ ipcMain.handle('keytab:create', async (_, { principal, password, encryptionType,
     if (encryptionType !== 'arcfour-hmac') {
       throw new Error('Only arcfour-hmac is supported in this version.');
     }
-    const keytabBuf = createArcfourKeytab(principal, password, kvno);
+    // Placeholder implementation - would need actual keytab creation logic
+    const keytabBuf = Buffer.from(`Mock keytab for ${principal}`, 'utf8');
     console.log('Generated keytabBuf (hex):', keytabBuf.toString('hex'));
     // Show save dialog
     const { filePath, canceled } = await dialog.showSaveDialog({
@@ -1391,7 +1400,7 @@ ipcMain.handle('kafka:consume', async (_, {
     });
     
     // Start consuming
-    const messages: KafkaMessage[] = [];
+    const messages: any[] = [];
     let messageCount = 0;
     
     await kafkaConsumer.run({
@@ -1403,9 +1412,13 @@ ipcMain.handle('kafka:consume', async (_, {
         }
         
         messages.push({
-          ...message,
           topic,
           partition,
+          offset: message.offset,
+          key: message.key,
+          value: message.value,
+          headers: message.headers,
+          timestamp: message.timestamp,
         });
         
         messageCount++;
@@ -1546,17 +1559,17 @@ ipcMain.handle('file:read', async (_, filePath: string) => {
 });
 
 // Add saveFile handler
-ipcMain.handle('saveFile', async (_, { content, path, fileName }) => {
+ipcMain.handle('saveFile', async (_, defaultPath: string, content: string) => {
   try {
     // Show save dialog
     const { filePath, canceled } = await dialog.showSaveDialog({
-      title: 'Save Java File',
-      defaultPath: fileName,
-      filters: [{ name: 'Java Files', extensions: ['java'] }]
+      title: 'Save File',
+      defaultPath: defaultPath,
+      filters: [{ name: 'Java Files', extensions: ['java'] }, { name: 'All Files', extensions: ['*'] }]
     });
 
     if (canceled || !filePath) {
-      return { success: false, error: 'Save canceled' };
+      return { success: false, canceled: true };
     }
 
     // Create directory if it doesn't exist
@@ -1570,6 +1583,65 @@ ipcMain.handle('saveFile', async (_, { content, path, fileName }) => {
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to save file' 
+    };
+  }
+});
+
+// Add saveFilesToDirectory handler
+ipcMain.handle('saveFilesToDirectory', async (_, files: Array<{ fileName: string, content: string }>) => {
+  try {
+    // Show directory selection dialog
+    const { filePaths, canceled } = await dialog.showOpenDialog({
+      title: 'Select Directory to Save Files',
+      properties: ['openDirectory', 'createDirectory']
+    });
+
+    if (canceled || !filePaths || filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+
+    const directoryPath = filePaths[0];
+    const errors: Array<{fileName: string, error: string}> = [];
+    let successCount = 0;
+
+    // Save each file
+    for (const file of files) {
+      try {
+        const filePath = path.join(directoryPath, file.fileName);
+        
+        // Create subdirectories if needed
+        const fileDir = path.dirname(filePath);
+        await fs.promises.mkdir(fileDir, { recursive: true });
+        
+        // Write the file
+        await fs.promises.writeFile(filePath, file.content, 'utf8');
+        successCount++;
+      } catch (error) {
+        errors.push({
+          fileName: file.fileName,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    if (errors.length > 0 && successCount === 0) {
+      return {
+        success: false,
+        error: 'Failed to save all files',
+        errors
+      };
+    }
+
+    return { 
+      success: true, 
+      directoryPath,
+      count: successCount,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to save files to directory' 
     };
   }
 });

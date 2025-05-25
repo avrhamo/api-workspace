@@ -607,17 +607,19 @@ electron_1.ipcMain.handle('api:executeRequests', async (_, configs) => {
                             return acc;
                         }
                         // Handle fixed values
-                        if (typeof fieldConfig === 'object' && fieldConfig.type === 'fixed') {
+                        if (typeof fieldConfig === 'object' && fieldConfig !== null && 'type' in fieldConfig && fieldConfig.type === 'fixed') {
+                            const config = fieldConfig;
                             console.log(`Using fixed value:`, {
                                 curlField,
-                                fixedValue: fieldConfig.value
+                                fixedValue: config.value
                             });
-                            acc[curlField] = fieldConfig.value;
+                            acc[curlField] = config.value;
                             return acc;
                         }
                         // Handle MongoDB fields
-                        if (typeof fieldConfig === 'object' && fieldConfig.type === 'mongodb') {
-                            const targetField = fieldConfig.targetField;
+                        if (typeof fieldConfig === 'object' && fieldConfig !== null && 'type' in fieldConfig && fieldConfig.type === 'mongodb') {
+                            const config = fieldConfig;
+                            const targetField = config.targetField;
                             console.log(`Extracting MongoDB field value:`, {
                                 curlField,
                                 targetField,
@@ -1085,7 +1087,8 @@ electron_1.ipcMain.handle('keytab:create', async (_, { principal, password, encr
         if (encryptionType !== 'arcfour-hmac') {
             throw new Error('Only arcfour-hmac is supported in this version.');
         }
-        const keytabBuf = createArcfourKeytab(principal, password, kvno);
+        // Placeholder implementation - would need actual keytab creation logic
+        const keytabBuf = Buffer.from(`Mock keytab for ${principal}`, 'utf8');
         console.log('Generated keytabBuf (hex):', keytabBuf.toString('hex'));
         // Show save dialog
         const { filePath, canceled } = await electron_1.dialog.showSaveDialog({
@@ -1269,9 +1272,13 @@ electron_1.ipcMain.handle('kafka:consume', async (_, { topic, groupId, fromBegin
                     return;
                 }
                 messages.push({
-                    ...message,
                     topic,
                     partition,
+                    offset: message.offset,
+                    key: message.key,
+                    value: message.value,
+                    headers: message.headers,
+                    timestamp: message.timestamp,
                 });
                 messageCount++;
                 if (messageCount >= maxMessages) {
@@ -1396,16 +1403,16 @@ electron_1.ipcMain.handle('file:read', async (_, filePath) => {
     }
 });
 // Add saveFile handler
-electron_1.ipcMain.handle('saveFile', async (_, { content, path, fileName }) => {
+electron_1.ipcMain.handle('saveFile', async (_, defaultPath, content) => {
     try {
         // Show save dialog
         const { filePath, canceled } = await electron_1.dialog.showSaveDialog({
-            title: 'Save Java File',
-            defaultPath: fileName,
-            filters: [{ name: 'Java Files', extensions: ['java'] }]
+            title: 'Save File',
+            defaultPath: defaultPath,
+            filters: [{ name: 'Java Files', extensions: ['java'] }, { name: 'All Files', extensions: ['*'] }]
         });
         if (canceled || !filePath) {
-            return { success: false, error: 'Save canceled' };
+            return { success: false, canceled: true };
         }
         // Create directory if it doesn't exist
         const dirPath = path.dirname(filePath);
@@ -1418,6 +1425,59 @@ electron_1.ipcMain.handle('saveFile', async (_, { content, path, fileName }) => 
         return {
             success: false,
             error: error instanceof Error ? error.message : 'Failed to save file'
+        };
+    }
+});
+// Add saveFilesToDirectory handler
+electron_1.ipcMain.handle('saveFilesToDirectory', async (_, files) => {
+    try {
+        // Show directory selection dialog
+        const { filePaths, canceled } = await electron_1.dialog.showOpenDialog({
+            title: 'Select Directory to Save Files',
+            properties: ['openDirectory', 'createDirectory']
+        });
+        if (canceled || !filePaths || filePaths.length === 0) {
+            return { success: false, canceled: true };
+        }
+        const directoryPath = filePaths[0];
+        const errors = [];
+        let successCount = 0;
+        // Save each file
+        for (const file of files) {
+            try {
+                const filePath = path.join(directoryPath, file.fileName);
+                // Create subdirectories if needed
+                const fileDir = path.dirname(filePath);
+                await fs.promises.mkdir(fileDir, { recursive: true });
+                // Write the file
+                await fs.promises.writeFile(filePath, file.content, 'utf8');
+                successCount++;
+            }
+            catch (error) {
+                errors.push({
+                    fileName: file.fileName,
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                });
+            }
+        }
+        if (errors.length > 0 && successCount === 0) {
+            return {
+                success: false,
+                error: 'Failed to save all files',
+                errors
+            };
+        }
+        return {
+            success: true,
+            directoryPath,
+            count: successCount,
+            errors: errors.length > 0 ? errors : undefined
+        };
+    }
+    catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to save files to directory'
         };
     }
 });

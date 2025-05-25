@@ -24,7 +24,8 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     // File operations
     readFile: (filePath) => electron_1.ipcRenderer.invoke('file:read', filePath),
     writeFile: (filePath, content) => electron_1.ipcRenderer.invoke('file:write', filePath, content),
-    saveFile: (data) => electron_1.ipcRenderer.invoke('saveFile', data),
+    saveFile: (defaultPath, content) => electron_1.ipcRenderer.invoke('saveFile', defaultPath, content),
+    saveFilesToDirectory: (files) => electron_1.ipcRenderer.invoke('saveFilesToDirectory', files),
     // New method
     findOne: (database, collection, query) => {
         return electron_1.ipcRenderer.invoke('mongodb:findOne', database, collection, query);

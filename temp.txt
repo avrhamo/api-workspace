@@ -1,53 +1,67 @@
------BEGIN PGP PUBLIC KEY BLOCK-----
+import { app, BrowserWindow, ipcMain } from 'electron'
+import { MongoClient } from 'mongodb'
 
-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
-=D15N
------END PGP PUBLIC KEY BLOCK-----
+let mongoClient: MongoClient | null = null;
+ 
+// ... your existing main process code ...
 
-addent -password -p testuser@TEST.REALM -k 1 -e arcfour-hmac
+ipcMain.handle('mongodb:connect', async (_, connectionString: string) => {
+  try {
+    mongoClient = new MongoClient(connectionString);
+    await mongoClient.connect();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mongodb:listDatabases', async () => {
+  try {
+    if (!mongoClient) throw new Error('Not connected to MongoDB');
+    const admin = mongoClient.db().admin();
+    const result = await admin.listDatabases();
+    return { success: true, databases: result.databases };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mongodb:listCollections', async (_, dbName: string) => {
+  try {
+    if (!mongoClient) throw new Error('Not connected to MongoDB');
+    const db = mongoClient.db(dbName);
+    const collections = await db.listCollections().toArray();
+    return { success: true, collections };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mongodb:executeTest', async (_, config: any) => {
+  try {
+    if (!mongoClient) throw new Error('Not connected to MongoDB');
+    // Implement your test execution logic here
+    return { success: true, results: [] };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}); 
+
+
+
+
+
+import { contextBridge, ipcRenderer } from 'electron'
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  connectToMongoDB: (connectionString: string) => 
+    ipcRenderer.invoke('mongodb:connect', connectionString),
+  listDatabases: () => 
+    ipcRenderer.invoke('mongodb:listDatabases'),
+  listCollections: (dbName: string) => 
+    ipcRenderer.invoke('mongodb:listCollections', dbName),
+  executeTest: (config: any) => 
+    ipcRenderer.invoke('mongodb:executeTest', config),
+  findOne: (database: string, collection: string) => 
+    ipcRenderer.invoke('mongodb:findOne', database, collection)
+}) 

@@ -178,6 +178,9 @@ const DEFAULT_TOOL_STATES: Record<string, any> = {
       useLombok: true,
       useJackson: true,
       useValidation: true,
+      useBuilder: false,
+      generateDummyUtils: false,
+      usePrimitiveTypes: false,
     },
   },
   'openapi-generator': {

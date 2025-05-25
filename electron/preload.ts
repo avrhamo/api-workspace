@@ -43,8 +43,10 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke('file:read', filePath),
     writeFile: (filePath: string, content: string) => 
       ipcRenderer.invoke('file:write', filePath, content),
-    saveFile: (data: { content: string; path: string; fileName: string }) =>
-      ipcRenderer.invoke('saveFile', data),
+    saveFile: (defaultPath: string, content: string) =>
+      ipcRenderer.invoke('saveFile', defaultPath, content),
+    saveFilesToDirectory: (files: Array<{ fileName: string, content: string }>) =>
+      ipcRenderer.invoke('saveFilesToDirectory', files),
 
     // New method
     findOne: (database: string, collection: string, query?: any) => {
