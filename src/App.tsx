@@ -181,6 +181,7 @@ const DEFAULT_TOOL_STATES: Record<string, any> = {
       useBuilder: false,
       generateDummyUtils: false,
       usePrimitiveTypes: false,
+      parseBsonTypes: false,
     },
   },
   'openapi-generator': {

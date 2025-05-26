@@ -20,6 +20,7 @@ interface POJOState {
     useBuilder: boolean;
     generateDummyUtils: boolean;
     usePrimitiveTypes: boolean;
+    parseBsonTypes: boolean;
   };
 }
 
@@ -58,6 +59,86 @@ const toJavaLiteral = (value: any): string => {
   return 'null'; // For objects, we'll handle them separately
 };
 
+// Helper: Check if value is a BSON type
+const isBsonType = (value: any): boolean => {
+  if (!value || typeof value !== 'object') return false;
+  
+  const bsonTypes = ['$oid', '$date', '$numberLong', '$numberInt', '$numberDouble', '$timestamp', '$binary'];
+  return bsonTypes.some(type => type in value);
+};
+
+// Helper: Get Java type from BSON value
+const getBsonJavaType = (value: any): { type: string; imports: Set<string> } => {
+  const imports = new Set<string>();
+  
+  if ('$oid' in value) {
+    imports.add('import org.bson.types.ObjectId;');
+    return { type: 'ObjectId', imports };
+  }
+  
+  if ('$date' in value) {
+    imports.add('import java.time.LocalDateTime;');
+    return { type: 'LocalDateTime', imports };
+  }
+  
+  if ('$numberLong' in value) {
+    return { type: 'Long', imports };
+  }
+  
+  if ('$numberInt' in value) {
+    return { type: 'Integer', imports };
+  }
+  
+  if ('$numberDouble' in value) {
+    return { type: 'Double', imports };
+  }
+  
+  if ('$timestamp' in value) {
+    imports.add('import java.sql.Timestamp;');
+    return { type: 'Timestamp', imports };
+  }
+  
+  if ('$binary' in value) {
+    return { type: 'byte[]', imports };
+  }
+  
+  return { type: 'Object', imports };
+};
+
+// Helper: Get Java literal for BSON values in util classes
+const getBsonJavaLiteral = (value: any): string => {
+  if ('$oid' in value) {
+    return `new ObjectId("${value.$oid}")`;
+  }
+  
+  if ('$date' in value) {
+    return `LocalDateTime.parse("${new Date(value.$date).toISOString().slice(0, -1)}")`;
+  }
+  
+  if ('$numberLong' in value) {
+    return `${value.$numberLong}L`;
+  }
+  
+  if ('$numberInt' in value) {
+    return `${value.$numberInt}`;
+  }
+  
+  if ('$numberDouble' in value) {
+    return `${value.$numberDouble}`;
+  }
+  
+  if ('$timestamp' in value) {
+    const timestampValue = value.$timestamp.t * 1000;
+    return `new Timestamp(${timestampValue}L)`;
+  }
+  
+  if ('$binary' in value) {
+    return `"${value.$binary.base64}".getBytes()`;
+  }
+  
+  return 'null';
+};
+
 // Helper: Generate util class with static constants and factory method
 function generateUtilClass(
   obj: any,
@@ -81,6 +162,17 @@ function generateUtilClass(
   // Generate constants for each field
   Object.entries(obj).forEach(([key, value]) => {
     const constantName = toSnakeCase(key);
+    
+    // Handle BSON types first if enabled
+    if (options.parseBsonTypes && isBsonType(value)) {
+      const bsonResult = getBsonJavaType(value);
+      bsonResult.imports.forEach(imp => imports.add(imp));
+      const javaValue = getBsonJavaLiteral(value);
+      constants.push(`    public static final ${bsonResult.type} ${constantName} = ${javaValue};`);
+      factoryParams.push(`${constantName}`);
+      return;
+    }
+    
     const javaValue = toJavaLiteral(value);
     
     if (typeof value === 'string') {
@@ -132,8 +224,8 @@ function generateUtilClass(
     code += `        return ${originalClassName}.builder()\n`;
     Object.entries(obj).forEach(([key, value]) => {
       const fieldName = key.match(/^\w+$/) ? key : key.replace(/[^a-zA-Z0-9_]/g, '_');
-      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-        // For nested objects, call their util methods
+      if (typeof value === 'object' && value !== null && !Array.isArray(value) && !(options.parseBsonTypes && isBsonType(value))) {
+        // For nested objects, call their util methods - but NOT for BSON types
         const nestedClassName = toPascalCase(singularize(fieldName));
         code += `                .${fieldName}(${nestedClassName}Util.get${nestedClassName}())\n`;
       } else {
@@ -147,7 +239,8 @@ function generateUtilClass(
     Object.entries(obj).forEach(([key, value]) => {
       const fieldName = key.match(/^\w+$/) ? key : key.replace(/[^a-zA-Z0-9_]/g, '_');
       const setterName = 'set' + fieldName.charAt(0).toUpperCase() + fieldName.slice(1);
-      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      if (typeof value === 'object' && value !== null && !Array.isArray(value) && !(options.parseBsonTypes && isBsonType(value))) {
+        // For nested objects, call their util methods - but NOT for BSON types
         const nestedClassName = toPascalCase(singularize(fieldName));
         code += `        obj.${setterName}(${nestedClassName}Util.get${nestedClassName}());\n`;
       } else {
@@ -247,7 +340,13 @@ function generateClasses(
     let fieldName = key.match(/^\w+$/) ? key : key.replace(/[^a-zA-Z0-9_]/g, '_');
     let javaField = fieldName;
     
-    if (Array.isArray(value)) {
+    // Check for BSON types first if enabled
+    if (options.parseBsonTypes && isBsonType(value)) {
+      const bsonResult = getBsonJavaType(value);
+      type = bsonResult.type;
+      bsonResult.imports.forEach(imp => imports.add(imp));
+    }
+    else if (Array.isArray(value)) {
       needsList = true;
       if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null && !Array.isArray(value[0])) {
         // Array of objects (recursively generate item class)
@@ -263,8 +362,8 @@ function generateClasses(
         type = 'List<Object>';
         imports.add('import java.util.List;');
       }
-    } else if (typeof value === 'object' && value !== null) {
-      // Nested object (recursively generate class)
+    } else if (typeof value === 'object' && value !== null && !(options.parseBsonTypes && isBsonType(value))) {
+      // Nested object (recursively generate class) - but NOT if it's a BSON type
       const classFieldName = toPascalCase(singularize(fieldName));
       type = classFieldName;
       nestedFields.push({ key: classFieldName, type: classFieldName, value });
@@ -309,12 +408,15 @@ function generateClasses(
   
   // Recursively generate nested classes
   nestedFields.forEach(({ key, value }) => {
-    generateClasses(value, key, packageName, options, classes, seen, originalObj, rootClassName);
-    
-    // Generate util classes for nested objects too
-    if (options.generateDummyUtils) {
-      const nestedUtilCode = generateUtilClass(value, key, packageName, options, key);
-      classes[key + 'Util.java'] = nestedUtilCode;
+    // Only generate nested classes if the value is not a BSON type
+    if (!(options.parseBsonTypes && isBsonType(value))) {
+      generateClasses(value, key, packageName, options, classes, seen, originalObj, rootClassName);
+      
+      // Generate util classes for nested objects too
+      if (options.generateDummyUtils) {
+        const nestedUtilCode = generateUtilClass(value, key, packageName, options, key);
+        classes[key + 'Util.java'] = nestedUtilCode;
+      }
     }
   });
   
@@ -641,7 +743,8 @@ const POJOCreator: React.FC<POJOCreatorProps> = ({ state, setState, editorHeight
                        optionKey === 'useValidation' ? 'Use Validation Annotations' :
                        optionKey === 'useBuilder' ? 'Use Builder' :
                        optionKey === 'generateDummyUtils' ? 'Generate Dummy Utils' : 
-                       optionKey === 'usePrimitiveTypes' ? 'Use Primitive Types' : optionKey}
+                       optionKey === 'usePrimitiveTypes' ? 'Use Primitive Types' :
+                       optionKey === 'parseBsonTypes' ? 'Parse BSON Types' : optionKey}
                     </span>
                     <button
                       type="button"
@@ -650,7 +753,8 @@ const POJOCreator: React.FC<POJOCreatorProps> = ({ state, setState, editorHeight
                         optionKey === 'useValidation' ? 'Validation Annotations' :
                         optionKey === 'useBuilder' ? 'Builder' :
                         optionKey === 'generateDummyUtils' ? 'Dummy Utils' : 
-                        optionKey === 'usePrimitiveTypes' ? 'Primitive Types' : optionKey}`}
+                        optionKey === 'usePrimitiveTypes' ? 'Primitive Types' :
+                        optionKey === 'parseBsonTypes' ? 'BSON Types' : optionKey}`}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                         state.options[optionKey as keyof POJOState['options']] 
                           ? 'bg-blue-600' 
