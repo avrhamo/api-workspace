@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MonacoEditor from '../../common/editor/MonacoEditor';
-import { DocumentArrowDownIcon, ChevronDownIcon, ChevronRightIcon, CloudArrowDownIcon, FolderOpenIcon } from '@heroicons/react/24/outline';
+import { DocumentArrowDownIcon, ChevronDownIcon, ChevronRightIcon, CloudArrowDownIcon, FolderOpenIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 import { FaJava } from 'react-icons/fa';
 import JSZip from 'jszip';
 import { useTheme } from '../../../hooks/useTheme';
@@ -469,6 +469,7 @@ const POJOCreator: React.FC<POJOCreatorProps> = ({ state, setState, editorHeight
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isSavingAll, setIsSavingAll] = useState(false);
   const [saveAllMessage, setSaveAllMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string; details?: string } | null>(null);
+  const [showBsonTooltip, setShowBsonTooltip] = useState(false);
 
   // Generate classes when input changes
   useEffect(() => {
@@ -668,90 +669,196 @@ const POJOCreator: React.FC<POJOCreatorProps> = ({ state, setState, editorHeight
   const fileNameTextClass = theme === 'dark' ? 'text-gray-100' : 'text-black-800';
 
   return (
-    <div className="flex flex-col min-h-0 h-full">
-      {/* Top: JSON Input and Options (collapsible) */}
-      <div className={`flex-shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 transition-all duration-500 ease-in-out ${inputCollapsed ? 'h-12 overflow-hidden' : 'h-auto'}`}>
-        <div className="flex items-center justify-between px-4 pt-2">
-          <button
-            className="flex items-center text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100 focus:outline-none transition-colors duration-200"
-            onClick={() => setInputCollapsed(!inputCollapsed)}
-            title={inputCollapsed ? 'Expand input section' : 'Collapse input section'}
-          >
-            <div className="transition-transform duration-300 ease-in-out">
-              {inputCollapsed ? <ChevronRightIcon className="w-5 h-5" /> : <ChevronDownIcon className="w-5 h-5" />}
+    <div className="min-h-0 h-full overflow-auto bg-gray-50 dark:bg-gray-900">
+      <div className="max-w-7xl mx-auto p-6 space-y-6">
+        {/* Header Card */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">POJO Creator</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">Generate Java classes from JSON with advanced features</p>
             </div>
-            <span className="ml-1 text-sm font-medium">Input</span>
-          </button>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={handleDownloadAsZip}
+                disabled={fileList.length === 0}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-lg shadow-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <CloudArrowDownIcon className="w-4 h-4 mr-2" />
+                Download ZIP
+              </button>
+              <button
+                onClick={() => handleSaveFilesByType('pojo')}
+                disabled={isSavingAll || fileList.length === 0}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                {isSavingAll ? (
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <DocumentArrowDownIcon className="w-4 h-4 mr-2" />
+                )}
+                Save POJOs
+              </button>
+              <button
+                onClick={() => handleSaveFilesByType('util')}
+                disabled={isSavingAll || fileList.length === 0}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+              >
+                {isSavingAll ? (
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <DocumentArrowDownIcon className="w-4 h-4 mr-2" />
+                )}
+                Save Utils
+              </button>
+            </div>
+          </div>
         </div>
-        {!inputCollapsed && (
-          <div className="px-4 pb-4 animate-in fade-in duration-300">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Class Name
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                  value={state.className}
-                  onChange={(e) => setState({ className: e.target.value })}
-                  placeholder="Enter class name..."
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Package Name
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                  value={state.packageName}
-                  onChange={(e) => setState({ packageName: e.target.value })}
-                  placeholder="Enter package name..."
-                />
-              </div>
-            </div>
-            <div className="mb-4">
+
+        {/* Basic Settings Card */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Basic Settings</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                JSON Input
+                Class Name
               </label>
-              <div className="h-48 border border-gray-300 dark:border-gray-600 rounded-md overflow-hidden" style={{ height: editorHeight }}>
-                <MonacoEditor
-                  key={theme}
-                  value={state.jsonInput}
-                  onChange={(value) => {
-                    setState({ jsonInput: value || '' });
-                    setInputTouched(true);
-                  }}
-                  language="json"
-                  theme={theme === 'dark' ? 'vs-dark' : 'light'}
-                  onMount={(editor, monaco) => {
-                    monacoRef.current = { editor, monaco };
-                  }}
-                  height={editorHeight}
-                />
-              </div>
+              <input
+                type="text"
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
+                value={state.className}
+                onChange={(e) => setState({ className: e.target.value })}
+                placeholder="Enter class name..."
+              />
             </div>
-            <div className="mb-2">
-              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Options</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Package Name
+              </label>
+              <input
+                type="text"
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
+                value={state.packageName}
+                onChange={(e) => setState({ packageName: e.target.value })}
+                placeholder="com.example"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* JSON Input Card */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">JSON Input</h2>
+          <div className="h-80 border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
+            <MonacoEditor
+              key={theme}
+              value={state.jsonInput}
+              onChange={(value) => {
+                setState({ jsonInput: value || '' });
+                setInputTouched(true);
+              }}
+              language="json"
+              theme={theme === 'dark' ? 'vs-dark' : 'light'}
+              onMount={(editor, monaco) => {
+                monacoRef.current = { editor, monaco };
+              }}
+              height="320px"
+            />
+          </div>
+        </div>
+
+        {/* Advanced Options Card */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+            <button
+              className="flex items-center justify-between w-full text-left"
+              onClick={() => setInputCollapsed(!inputCollapsed)}
+            >
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Advanced Options</h2>
+              <div className="transition-transform duration-300 ease-in-out">
+                {inputCollapsed ? <ChevronRightIcon className="w-5 h-5 text-gray-500" /> : <ChevronDownIcon className="w-5 h-5 text-gray-500" />}
+              </div>
+            </button>
+          </div>
+          
+          <div className={`transition-all duration-500 ease-in-out overflow-hidden ${inputCollapsed ? 'max-h-0' : 'max-h-96'}`}>
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {Object.keys(state.options).map((optionKey) => (
-                  <div key={optionKey} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {optionKey === 'useLombok' ? 'Use Lombok' : 
-                       optionKey === 'useJackson' ? 'Use Jackson Annotations' :
-                       optionKey === 'useValidation' ? 'Use Validation Annotations' :
-                       optionKey === 'useBuilder' ? 'Use Builder' :
-                       optionKey === 'generateDummyUtils' ? 'Generate Dummy Utils' : 
-                       optionKey === 'usePrimitiveTypes' ? 'Use Primitive Types' :
-                       optionKey === 'parseBsonTypes' ? 'Parse BSON Types' : optionKey}
-                    </span>
+                  <div key={optionKey} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+                    <div className="flex flex-col">
+                      <div className="flex items-center">
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {optionKey === 'useLombok' ? 'Use Lombok' : 
+                           optionKey === 'useJackson' ? 'Jackson Annotations' :
+                           optionKey === 'useValidation' ? 'Validation Annotations' :
+                           optionKey === 'useBuilder' ? 'Builder Pattern' :
+                           optionKey === 'generateDummyUtils' ? 'Generate Dummy Utils' : 
+                           optionKey === 'usePrimitiveTypes' ? 'Primitive Types' :
+                           optionKey === 'parseBsonTypes' ? 'Parse BSON Types' : optionKey}
+                        </span>
+                        {optionKey === 'parseBsonTypes' && (
+                          <div className="relative ml-2">
+                            <button
+                              onMouseEnter={() => setShowBsonTooltip(true)}
+                              onMouseLeave={() => setShowBsonTooltip(false)}
+                              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                              aria-label="BSON types information"
+                            >
+                              <QuestionMarkCircleIcon className="w-4 h-4" />
+                            </button>
+                            {showBsonTooltip && (
+                              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-80 p-3 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs rounded-lg shadow-lg z-50">
+                                <div className="space-y-2">
+                                  <p className="font-semibold">MongoDB BSON Types:</p>
+                                  <div className="space-y-1">
+                                    <p><span className="font-mono bg-gray-800 dark:bg-gray-200 px-1 rounded">{"$oid"}</span> → ObjectId</p>
+                                    <p><span className="font-mono bg-gray-800 dark:bg-gray-200 px-1 rounded">{"$date"}</span> → LocalDateTime</p>
+                                    <p><span className="font-mono bg-gray-800 dark:bg-gray-200 px-1 rounded">{"$numberLong"}</span> → Long</p>
+                                  </div>
+                                  <div className="pt-2 border-t border-gray-700 dark:border-gray-300">
+                                    <p className="font-semibold">Get BSON from MongoDB:</p>
+                                    <div className="space-y-1 mt-1">
+                                      <p className="font-mono bg-gray-800 dark:bg-gray-200 px-1 rounded">
+                                        db.collection.findOne()
+                                      </p>
+                                      <p className="font-mono bg-gray-800 dark:bg-gray-200 px-1 rounded">
+                                        db.collection.find().toArray()
+                                      </p>
+                                      <p className="font-mono bg-gray-800 dark:bg-gray-200 px-1 rounded">
+                                        mongoexport --jsonFormat=canonical
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-gray-100"></div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {optionKey === 'useLombok' ? '@Data, @Builder annotations' : 
+                         optionKey === 'useJackson' ? '@JsonProperty annotations' :
+                         optionKey === 'useValidation' ? '@NotNull, @NotBlank' :
+                         optionKey === 'useBuilder' ? 'Builder pattern support' :
+                         optionKey === 'generateDummyUtils' ? 'Utility classes with test data' : 
+                         optionKey === 'usePrimitiveTypes' ? 'int, boolean vs Integer, Boolean' :
+                         optionKey === 'parseBsonTypes' ? 'MongoDB BSON type support' : ''}
+                      </span>
+                    </div>
                     <button
                       type="button"
-                      title={`Toggle ${optionKey === 'useLombok' ? 'Lombok' : 
+                      aria-label={`Toggle ${optionKey === 'useLombok' ? 'Lombok' : 
                         optionKey === 'useJackson' ? 'Jackson Annotations' :
                         optionKey === 'useValidation' ? 'Validation Annotations' :
-                        optionKey === 'useBuilder' ? 'Builder' :
+                        optionKey === 'useBuilder' ? 'Builder Pattern' :
                         optionKey === 'generateDummyUtils' ? 'Dummy Utils' : 
                         optionKey === 'usePrimitiveTypes' ? 'Primitive Types' :
                         optionKey === 'parseBsonTypes' ? 'BSON Types' : optionKey}`}
@@ -781,239 +888,180 @@ const POJOCreator: React.FC<POJOCreatorProps> = ({ state, setState, editorHeight
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Generated Files Card */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* File Explorer */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Generated Files</h2>
+            
+            <div className="space-y-4">
+              {(() => {
+                const pojoFiles = fileList.filter(fileName => !fileName.includes('Util.java'));
+                const utilFiles = fileList.filter(fileName => fileName.includes('Util.java'));
+                
+                return (
+                  <>
+                    {/* POJO Classes */}
+                    {pojoFiles.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-3 flex items-center">
+                          <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
+                          POJO Classes ({pojoFiles.length})
+                        </h4>
+                        <div className="space-y-2">
+                          {pojoFiles.map(fileName => (
+                            <div
+                              key={fileName}
+                              className={`w-full flex items-center p-3 rounded-lg text-left transition-all duration-200 cursor-pointer ${
+                                state.selectedFile === fileName 
+                                  ? 'bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-200 dark:border-blue-700 text-blue-900 dark:text-blue-100' 
+                                  : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border-2 border-transparent'
+                              }`}
+                              onClick={() => setState({ selectedFile: fileName })}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  setState({ selectedFile: fileName });
+                                }
+                              }}
+                            >
+                              <FaJava className="text-orange-600 w-5 h-5 mr-3 flex-shrink-0" />
+                              <span className="text-sm font-medium truncate flex-1">{fileName}</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSaveFile(fileName, state.generatedFiles[fileName]);
+                                }}
+                                disabled={isSaving === fileName}
+                                aria-label={`Save ${fileName}`}
+                                className="ml-2 p-1.5 rounded-md hover:bg-blue-100 dark:hover:bg-blue-800 flex-shrink-0 transition-colors"
+                              >
+                                <FolderOpenIcon className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Util Classes */}
+                    {utilFiles.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-3 flex items-center">
+                          <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                          Util Classes ({utilFiles.length})
+                        </h4>
+                        <div className="space-y-2">
+                          {utilFiles.map(fileName => (
+                            <div
+                              key={fileName}
+                              className={`w-full flex items-center p-3 rounded-lg text-left transition-all duration-200 cursor-pointer ${
+                                state.selectedFile === fileName 
+                                  ? 'bg-green-50 dark:bg-green-900/30 border-2 border-green-200 dark:border-green-700 text-green-900 dark:text-green-100' 
+                                  : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border-2 border-transparent'
+                              }`}
+                              onClick={() => setState({ selectedFile: fileName })}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  setState({ selectedFile: fileName });
+                                }
+                              }}
+                            >
+                              <FaJava className="text-green-600 w-5 h-5 mr-3 flex-shrink-0" />
+                              <span className="text-sm font-medium truncate flex-1">{fileName}</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSaveFile(fileName, state.generatedFiles[fileName]);
+                                }}
+                                disabled={isSaving === fileName}
+                                aria-label={`Save ${fileName}`}
+                                className="ml-2 p-1.5 rounded-md hover:bg-green-100 dark:hover:bg-green-800 flex-shrink-0 transition-colors"
+                              >
+                                <FolderOpenIcon className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {fileList.length === 0 && (
+                      <div className="text-center py-12">
+                        <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                          <FaJava className="w-8 h-8 text-gray-400" />
+                        </div>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">
+                          No files generated yet.<br />
+                          Add JSON input to get started.
+                        </p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Code Preview */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Code Preview
+              {state.selectedFile && (
+                <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
+                  {state.selectedFile}
+                </span>
+              )}
+            </h2>
+            <div className="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden" style={{ height: '512px' }}>
+              <MonacoEditor
+                key={`code-preview-${theme}`}
+                value={selectedCode}
+                language="java"
+                readOnly
+                theme={theme === 'dark' ? 'vs-dark' : 'light'}
+                onMount={(editor, monaco) => {
+                  monacoRef.current = { editor, monaco };
+                  // Force layout calculation
+                  setTimeout(() => {
+                    editor.layout();
+                  }, 100);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Messages */}
+        {(saveMessage || saveAllMessage || state.error) && (
+          <div className="space-y-3">
+            {saveMessage && (
+              <div className={`p-4 rounded-lg border ${saveMessage.type === 'success' ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800 text-green-700 dark:text-green-200' : 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-200'}`}>
+                {saveMessage.text}
+              </div>
+            )}
+            
+            {saveAllMessage && (
+              <div className={`p-4 rounded-lg border ${saveAllMessage.type === 'success' ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800 text-green-700 dark:text-green-200' : saveAllMessage.type === 'error' ? 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-200' : 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-200'}`}>
+                {saveAllMessage.text}
+              </div>
+            )}
+
             {state.error && (
-              <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-md">
+              <div className="p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg">
                 <p className="text-sm text-red-700 dark:text-red-200">{state.error}</p>
               </div>
             )}
           </div>
         )}
-      </div>
-      {/* Main: File Explorer and Editor */}
-      <div className="flex-1 flex flex-row min-h-0 overflow-auto">
-        {/* Left: Monaco Editor */}
-        <div className="flex-1 flex flex-col p-4 min-w-0">
-          <div className="flex justify-between items-center mb-2">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
-              {state.selectedFile || 'No file selected'}
-            </label>
-            <div className="flex space-x-2">
-              <button
-                onClick={handleDownloadAsZip}
-                disabled={fileList.length === 0}
-                className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md shadow-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Download all generated files as ZIP"
-              >
-                <CloudArrowDownIcon className="w-4 h-4 mr-1" />
-                Save as ZIP
-              </button>
-              <button
-                onClick={() => handleSaveFilesByType('pojo')}
-                disabled={isSavingAll || fileList.length === 0}
-                className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Save all POJO classes to a directory"
-              >
-                {isSavingAll ? (
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <DocumentArrowDownIcon className="w-4 h-4 mr-1" />
-                )}
-                Save POJOs
-              </button>
-              <button
-                onClick={() => handleSaveFilesByType('util')}
-                disabled={isSavingAll || fileList.length === 0}
-                className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Save all Util classes to a directory"
-              >
-                {isSavingAll ? (
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <DocumentArrowDownIcon className="w-4 h-4 mr-1" />
-                )}
-                Save Utils
-              </button>
-            </div>
-          </div>
-          <div className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md overflow-auto min-h-96" style={{ height: editorHeight }}>
-            <MonacoEditor
-              key={theme}
-              value={selectedCode}
-              language="java"
-              readOnly
-              theme={theme === 'dark' ? 'vs-dark' : 'light'}
-              height={editorHeight}
-              onMount={(editor, monaco) => {
-                monacoRef.current = { editor, monaco };
-              }}
-            />
-          </div>
-        </div>
-        {/* Right: File Explorer as grid */}
-        <div className="w-[32rem] flex flex-col p-4 border-l border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 max-h-full overflow-y-auto">
-          <div className="font-semibold mb-2 text-gray-700 dark:text-gray-200">Generated Files</div>
-          {saveMessage && (
-            <div className={`p-2 mb-2 rounded-md text-sm ${saveMessage.type === 'success' ? 'bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200' : 'bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-200'}`}>
-              {saveMessage.text}
-            </div>
-          )}
-          {saveAllMessage && (
-            <div className={`p-2 mb-2 rounded-md text-sm ${saveAllMessage.type === 'success' ? 'bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200' : saveAllMessage.type === 'error' ? 'bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-200' : 'bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200'}`}>
-              {saveAllMessage.text}
-              {saveAllMessage.details && <pre className="mt-1 text-xs whitespace-pre-wrap">{saveAllMessage.details}</pre>}
-            </div>
-          )}
-          
-          {/* POJO Classes Section */}
-          {(() => {
-            const pojoFiles = fileList.filter(fileName => !fileName.includes('Util.java'));
-            const utilFiles = fileList.filter(fileName => fileName.includes('Util.java'));
-            
-            return (
-              <>
-                {pojoFiles.length > 0 && (
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-sm font-medium text-gray-600 dark:text-gray-300">POJO Classes ({pojoFiles.length})</h3>
-                      <button
-                        onClick={() => handleSaveFilesByType('pojo')}
-                        disabled={isSavingAll || pojoFiles.length === 0}
-                        className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Save all POJO classes to a directory"
-                      >
-                        {isSavingAll ? (
-                          <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        ) : (
-                          <DocumentArrowDownIcon className="w-3 h-3 mr-1" />
-                        )}
-                        Save POJOs
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                      {pojoFiles.map(fileName => (
-                        <div
-                          key={fileName}
-                          className={`relative flex flex-col items-center gap-2 p-3 rounded cursor-pointer transition-colors ${state.selectedFile === fileName ? 'bg-blue-100 dark:bg-blue-800' : 'hover:bg-gray-200 dark:hover:bg-gray-800'}`}
-                          onClick={() => setState({ selectedFile: fileName })}
-                          onMouseEnter={() => setHoveredFile(fileName)}
-                          onMouseLeave={() => setHoveredFile(null)}
-                          title={fileName}
-                          style={{ minWidth: 0 }}
-                        >
-                          <FaJava className="text-orange-600 w-6 h-6" />
-                          <span className="truncate max-w-[100px] text-xs text-center font-medium text-black dark:text-white">
-                            {fileName}
-                          </span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSaveFile(fileName, state.generatedFiles[fileName]);
-                            }}
-                            disabled={isSaving === fileName}
-                            className={`absolute top-1 right-1 p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-700 disabled:opacity-50
-                              ${state.selectedFile === fileName ? 'text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-700' : 'text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400'}`
-                            }
-                            title={`Save ${fileName}`}
-                          >
-                            {isSaving === fileName ? (
-                              <svg className="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                            ) : (
-                              <FolderOpenIcon className="w-4 h-4" />
-                            )}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Divider between POJO and Util classes */}
-                {pojoFiles.length > 0 && utilFiles.length > 0 && (
-                  <div className="flex items-center my-4">
-                    <hr className="flex-1 border-gray-300 dark:border-gray-600" />
-                    <span className="px-3 text-xs text-gray-500 dark:text-gray-400">UTILITY CLASSES</span>
-                    <hr className="flex-1 border-gray-300 dark:border-gray-600" />
-                  </div>
-                )}
-                
-                {/* Util Classes Section */}
-                {utilFiles.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-sm font-medium text-gray-600 dark:text-gray-300">Util Classes ({utilFiles.length})</h3>
-                      <button
-                        onClick={() => handleSaveFilesByType('util')}
-                        disabled={isSavingAll || utilFiles.length === 0}
-                        className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Save all Util classes to a directory"
-                      >
-                        {isSavingAll ? (
-                          <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        ) : (
-                          <DocumentArrowDownIcon className="w-3 h-3 mr-1" />
-                        )}
-                        Save Utils
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                      {utilFiles.map(fileName => (
-                        <div
-                          key={fileName}
-                          className={`relative flex flex-col items-center gap-2 p-3 rounded cursor-pointer transition-colors ${state.selectedFile === fileName ? 'bg-green-100 dark:bg-green-800' : 'hover:bg-gray-200 dark:hover:bg-gray-800'}`}
-                          onClick={() => setState({ selectedFile: fileName })}
-                          onMouseEnter={() => setHoveredFile(fileName)}
-                          onMouseLeave={() => setHoveredFile(null)}
-                          title={fileName}
-                          style={{ minWidth: 0 }}
-                        >
-                          <FaJava className="text-green-600 w-6 h-6" />
-                          <span className="truncate max-w-[100px] text-xs text-center font-medium text-black dark:text-white">
-                            {fileName}
-                          </span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSaveFile(fileName, state.generatedFiles[fileName]);
-                            }}
-                            disabled={isSaving === fileName}
-                            className={`absolute top-1 right-1 p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-700 disabled:opacity-50
-                              ${state.selectedFile === fileName ? 'text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-700' : 'text-gray-500 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-400'}`
-                            }
-                            title={`Save ${fileName}`}
-                          >
-                            {isSaving === fileName ? (
-                              <svg className="animate-spin h-4 w-4 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                            ) : (
-                              <FolderOpenIcon className="w-4 h-4" />
-                            )}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
-            );
-          })()}
-        </div>
       </div>
     </div>
   );
